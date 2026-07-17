@@ -242,8 +242,10 @@
   .urls .modechip{margin-left:8px;padding:2px 6px;border-radius:5px;font-size:9px;
     font-weight:700;letter-spacing:.1em;color:var(--live);border:1px solid #2a4a35}
   .urls .modechip.qual{color:var(--blue);border-color:#24445f}
-  .urls .modeswitch{margin-left:8px;padding:4px 8px;font-size:10px;letter-spacing:.06em;border-radius:6px;
+  .urls .modeswitch{margin-left:auto;padding:4px 8px;font-size:10px;letter-spacing:.06em;border-radius:6px;
     border:1px solid #24445f;background:#0c141c;color:var(--blue);cursor:pointer}
+  /* keep the disclosure triangle after the right-aligned switch */
+  details.urls summary::after{margin-left:8px}
   .urls .modeswitch:hover{border-color:var(--blue);color:var(--ink)}
   .urls table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px}
   .urls td{padding:5px 4px;vertical-align:middle;border-bottom:1px solid #1e252d;color:var(--muted)}
@@ -729,11 +731,8 @@
   </div>
 
   <details class="bus urls" id="urlsBox">
-    <summary>Schedule <span class="modechip" id="modeChip">RACE</span></summary>
+    <summary>Schedule <span class="modechip" id="modeChip">RACE</span><button class="modeswitch" id="modeSwitch" hidden>switch → QUALIFYING</button></summary>
     <div class="body">
-      <div style="margin-bottom:10px">
-        <button class="modeswitch" id="modeSwitch" hidden>switch → QUALIFYING</button>
-      </div>
 
       <!-- Race schedule (shown in race mode) -->
       <div id="raceSched">
@@ -2312,7 +2311,8 @@ $("#qualRow").querySelectorAll("input,select").forEach(el=>{
   el.addEventListener("input", ()=>$("#qualRow").dataset.dirty = 1);
   el.addEventListener("change", ()=>$("#qualRow").dataset.dirty = 1);
 });
-$("#modeSwitch").addEventListener("click", async ()=>{
+$("#modeSwitch").addEventListener("click", async (e)=>{
+  e.preventDefault(); e.stopPropagation();   // it lives in the <summary>; don't toggle the details
   if (relayMode === "qualifying"){
     if (!confirm("Switch the relay back to RACE MODE? Feeds re-point to the race schedule (interrupts a running pull).")) return;
     await relayCall("mode/race");
