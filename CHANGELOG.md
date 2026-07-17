@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.6.0...v1.7.0) (2026-07-17)
+
+
+### Features
+
+* 12 new full-page Stint graphics (info + starting grid) ([#516](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/516)) ([f8d9618](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/f8d9618a4b8a306f820ccc6162df1e99df6fa62c))
+* **panel:** single-content Director Panel — drop PROGRAM/SETUP tabs ([#518](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/518)) ([e3dbf5d](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e3dbf5d0c1ae4c21ddb77e14ced66864b7f00ed9))
+
 ## [1.6.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.5.5...v1.6.0) (2026-07-16)
 
 
