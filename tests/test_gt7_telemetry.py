@@ -475,6 +475,41 @@ def t_engine_time_of_day_survives_session_reset():
     assert s["time_of_day_ms"] == 45000000                    # clock kept, not blanked
 
 
+def t_engine_avg_lap_is_whole_session_not_last3():
+    # Four clean laps of different durations: the average must be the mean of ALL
+    # four, not just the last three (proves the rolling-3 window is gone).
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for lap, dur in ((1, 10.0), (2, 20.0), (3, 12.0), (4, 18.0)):
+        _feed_lap(eng, t, lap, duration=dur, speed=50.0)
+        t += dur
+    # lap 5 edge already closed lap 4 inside _feed_lap's next call chain; read avg
+    avg = eng.snapshot()["avg_lap_s"]
+    assert avg is not None
+    assert abs(avg - (10.0 + 20.0 + 12.0 + 18.0) / 4) < 0.5, avg   # ~15.0, not last-3 (~16.67)
+
+
+def t_engine_avg_lap_none_without_laps():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=1, speed_mps=50.0)), 100.0)
+    assert eng.snapshot()["avg_lap_s"] is None
+
+
+def t_format_surfaces_avg_lap():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70, 70, 70, 70), "lap": 3,
+            "current_lap_s": 5.0, "best_s": 90.0, "delta_s": None, "predicted_s": None,
+            "has_reference": True, "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0),
+            "top_speed_mps": 0.0, "time_of_day_ms": None, "avg_lap_s": 92.5,
+            "session_dist_m": 0.0,
+            "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
+                     "time_remaining_s": 1600.0}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["avg_lap"] == "1:32.500"
+    snap["avg_lap_s"] = None
+    assert tm.format_snapshot(snap, "metric", (70, 85, 95))["avg_lap"] is None
+
+
 def t_engine_pit_lap_via_standstill_excluded():
     eng = tm.TelemetryEngine()
     eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
@@ -485,7 +520,8 @@ def t_engine_pit_lap_via_standstill_excluded():
         eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
     eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge
     assert eng.snapshot()["has_reference"] is False       # pit lap never became reference
-    assert eng._lap_times == [] and eng._lap_fuel == []   # and out of the time/fuel averages
+    assert eng._lap_time_n == 0 and eng._lap_fuel_n == 0
+    assert eng.snapshot()["avg_lap_s"] is None
 
 
 def t_engine_pit_lap_via_fuel_rise_excluded():
