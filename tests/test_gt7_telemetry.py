@@ -627,6 +627,52 @@ def t_store_source_roundtrip():
     assert store.data()["source"] is None
 
 
+def t_engine_session_distance_accumulates_incl_pit():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    # lap 1: ~10 s @ 50 m/s ≈ 500 m
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
+    d1 = eng.snapshot()["session_dist_m"]
+    assert 400 < d1 < 600, d1
+    # lap 2 also ~500 m -> ~1000 m total
+    _feed_lap(eng, 110.0, 2, duration=10.0, speed=50.0)
+    d2 = eng.snapshot()["session_dist_m"]
+    assert 900 < d2 < 1100, d2
+    assert d2 > d1
+
+
+def t_engine_session_distance_resets_on_session_boundary():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
+    assert eng.snapshot()["session_dist_m"] > 100
+    # lap counter backwards = new session
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), 130.0)
+    assert eng.snapshot()["session_dist_m"] == 0.0
+
+
+def t_engine_session_distance_includes_live_lap():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for _ in range(100):    # ~10 s @ 50 m/s in the CURRENT (unfinished) lap
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    assert eng.snapshot()["session_dist_m"] > 400   # live lap counted, no edge yet
+
+
+def t_format_surfaces_session_distance():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70, 70, 70, 70), "lap": 2,
+            "current_lap_s": 0.0, "best_s": None, "delta_s": None, "predicted_s": None,
+            "has_reference": False, "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0),
+            "top_speed_mps": 0.0, "time_of_day_ms": None, "avg_lap_s": None,
+            "session_dist_m": 2500.0,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["session_distance"] == 2.5 and out["units"]["distance"] == "km"
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert abs(imp["session_distance"] - 1.6) < 0.1 and imp["units"]["distance"] == "mi"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

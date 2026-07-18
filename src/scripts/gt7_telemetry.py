@@ -171,6 +171,7 @@ class TelemetryEngine:
         self._lap_time_n = 0
         self._lap_fuel_sum = 0.0  # Σ admitted clean lap fuel burns (L), whole session
         self._lap_fuel_n = 0
+        self._session_dist_m = 0.0    # Σ on-track distance driven this session (m)
         self._trace = deque()     # (t, throttle01, brake01), decimated + windowed
         self._trace_last_t = None
         self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
@@ -197,6 +198,7 @@ class TelemetryEngine:
         self._lap_time_n = 0
         self._lap_fuel_sum = 0.0
         self._lap_fuel_n = 0
+        self._session_dist_m = 0.0
         self._top_speed = 0.0
         self._delta_hist.clear()
         self._lap_num = pkt.lap
@@ -210,6 +212,8 @@ class TelemetryEngine:
             self._reset_session(now, pkt)
         elif pkt.lap != self._lap_num:    # lap-change edge: this new lap starts at the line
             self._finalise_lap()
+            if self._acc is not None:     # bank the closing lap's driven distance
+                self._session_dist_m += self._acc.distance
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now, started_at_boundary=True)
             self._delta_hist.clear()
@@ -344,6 +348,7 @@ class TelemetryEngine:
             "predicted_s": predicted,
             "has_reference": has_ref,
             "avg_lap_s": self._avg_lap_s(),
+            "session_dist_m": self._session_dist_m + (acc.distance if acc else 0.0),
             "fuel": self._fuel(),
             "tyre_temp_avg": self._tyre_avg(),
             "top_speed_mps": self._top_speed,
@@ -385,6 +390,7 @@ def _band(temp_c, thresholds):
 def format_snapshot(snap, units, thresholds):
     imperial = units == "imperial"
     spd = snap["speed_mps"] * (2.2369363 if imperial else 3.6)
+    dist = snap.get("session_dist_m", 0.0) * (0.000621371 if imperial else 0.001)
     avgs = snap["tyre_temp_avg"]
     tyres = []
     for i, c in enumerate(snap["tyre_temp"]):
@@ -405,6 +411,7 @@ def format_snapshot(snap, units, thresholds):
         "predicted": _fmt_time(snap["predicted_s"]),
         "has_reference": snap["has_reference"],
         "time_of_day": _fmt_clock(snap["time_of_day_ms"]),
+        "session_distance": round(dist, 1),
         "fuel": {
             "level": round(lvl, 1),
             "per_lap": (None if fuel["per_lap"] is None
@@ -418,6 +425,7 @@ def format_snapshot(snap, units, thresholds):
             "speed": "mph" if imperial else "km/h",
             "temp": "°F" if imperial else "°C",
             "fuel": "gal" if imperial else "L",
+            "distance": "mi" if imperial else "km",
         },
     }
 
