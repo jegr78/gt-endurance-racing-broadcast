@@ -266,6 +266,22 @@ def t_engine_fuel_continuous_decay():
     assert f["per_lap"] is not None and abs(f["per_lap"] - 2.0) < 0.3
 
 
+def t_engine_fuel_per_lap_is_whole_session_not_last3():
+    # Twin of t_engine_avg_lap_is_whole_session_not_last3, for the fuel side.
+    # Four completed fuel laps with burns 6/2/2/2 L: the whole-session mean is
+    # 3.0 L, while a rolling last-3 window would give 2.0 L. Proves fuel per-lap
+    # averages the WHOLE session (the old 3-lap window is gone). fuel_start drops
+    # 60->54 (6 L burn), then 54->52->50->48 (2 L each); the 5th feed only closes
+    # lap 4 (its own burn is non-positive and excluded).
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for lap, fs in ((1, 60.0), (2, 54.0), (3, 52.0), (4, 50.0), (5, 48.0)):
+        t = _feed_lap(eng, t, lap, duration=10.0, speed=50.0, fuel_start=fs)
+    per_lap = eng.snapshot()["fuel"]["per_lap"]
+    assert per_lap is not None
+    assert abs(per_lap - 3.0) < 0.5, per_lap   # whole-session 3.0, not last-3 (~2.0)
+
+
 def t_engine_trace_decimates_and_windows():
     eng = tm.TelemetryEngine()
     t = 100.0

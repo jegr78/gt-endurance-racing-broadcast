@@ -122,8 +122,8 @@
   #tele-fuel{left:1522px;top:809px;font-size:18px}
   #tele-avg-lbl{left:1650px;top:792px}
   #tele-avg{left:1650px;top:809px;font-size:18px}
-  #tele-dist-lbl{left:1780px;top:792px}
-  #tele-dist{left:1780px;top:809px;font-size:18px}
+  #tele-dist-lbl{left:1770px;top:792px}
+  #tele-dist{left:1770px;top:809px;font-size:18px;width:120px}
   /* Time of day (on-track clock): top-left, centred in the gap between GT7's
      lap-count header and its standings tower, on a dark translucent bar that
      echoes the tower's name rows; left-aligned to the driver-name column.
@@ -454,7 +454,7 @@
           avg.style.display = "none";
         }
         document.getElementById("tele-dist").textContent =
-          d.session_distance + " " + d.units.distance;
+          d.session_distance.toFixed(1) + " " + d.units.distance;
         document.getElementById("tele-top").textContent =
           d.top_speed + " " + d.units.speed;
         const clock = document.getElementById("tele-clock");
