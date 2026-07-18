@@ -167,8 +167,11 @@ class TelemetryEngine:
         self._lap_num = None
         self._acc = None                  # current _LapAccumulator
         self._ref = None                  # reference (best) lap: {"time": s, "samples": [...]}
-        self._lap_times = []      # last completed clean lap durations (s)
-        self._lap_fuel = []       # last completed clean lap fuel burns (L)
+        self._lap_time_sum = 0.0  # Σ admitted clean lap durations (s), whole session
+        self._lap_time_n = 0
+        self._lap_fuel_sum = 0.0  # Σ admitted clean lap fuel burns (L), whole session
+        self._lap_fuel_n = 0
+        self._session_dist_m = 0.0    # Σ on-track distance driven this session (m)
         self._trace = deque()     # (t, throttle01, brake01), decimated + windowed
         self._trace_last_t = None
         self._tyre_hist = deque()     # (t, (fl,fr,rl,rr)) over TYRE_AVG_WINDOW_S
@@ -191,8 +194,11 @@ class TelemetryEngine:
         """Drop everything derived from the previous session (possibly a different
         track/car) and re-open a fresh lap at the boundary."""
         self._ref = None
-        self._lap_times = []
-        self._lap_fuel = []
+        self._lap_time_sum = 0.0
+        self._lap_time_n = 0
+        self._lap_fuel_sum = 0.0
+        self._lap_fuel_n = 0
+        self._session_dist_m = 0.0
         self._top_speed = 0.0
         self._delta_hist.clear()
         self._lap_num = pkt.lap
@@ -206,6 +212,8 @@ class TelemetryEngine:
             self._reset_session(now, pkt)
         elif pkt.lap != self._lap_num:    # lap-change edge: this new lap starts at the line
             self._finalise_lap()
+            if self._acc is not None:     # bank the closing lap's driven distance
+                self._session_dist_m += self._acc.distance
             self._lap_num = pkt.lap
             self._acc = _LapAccumulator(now, started_at_boundary=True)
             self._delta_hist.clear()
@@ -246,13 +254,13 @@ class TelemetryEngine:
             return
         if self._ref is None or acc.elapsed < self._ref["time"]:
             self._ref = {"time": acc.elapsed, "samples": acc.samples}
-        self._lap_times.append(acc.elapsed)
-        self._lap_times = self._lap_times[-3:]
+        self._lap_time_sum += acc.elapsed
+        self._lap_time_n += 1
         if acc.fuel_start is not None and acc.fuel_end is not None:
             burn = acc.fuel_start - acc.fuel_end
             if burn > 0:
-                self._lap_fuel.append(burn)
-                self._lap_fuel = self._lap_fuel[-3:]
+                self._lap_fuel_sum += burn
+                self._lap_fuel_n += 1
 
     def _ref_time_at(self, distance):
         """Interpolate the reference lap's elapsed time at a given distance."""
@@ -282,16 +290,20 @@ class TelemetryEngine:
             return None
         return acc.elapsed - self._ref_time_at(acc.distance)
 
+    def _avg_lap_s(self):
+        """Session mean of the admitted clean laps (s), or None before any lap."""
+        return self._lap_time_sum / self._lap_time_n if self._lap_time_n else None
+
     def _fuel(self):
         pkt = self._last
         level = pkt.fuel_level if pkt else 0.0
         per_lap = laps = time_rem = None
-        if self._lap_fuel:
-            per_lap = sum(self._lap_fuel) / len(self._lap_fuel)
+        if self._lap_fuel_n:
+            per_lap = self._lap_fuel_sum / self._lap_fuel_n
             if per_lap > 0:
                 laps = level / per_lap
-                if self._lap_times:
-                    avg = sum(self._lap_times) / len(self._lap_times)
+                avg = self._avg_lap_s()
+                if avg is not None:
                     time_rem = laps * avg
         return {"level": level, "per_lap": per_lap,
                 "laps_remaining": laps, "time_remaining_s": time_rem}
@@ -335,6 +347,8 @@ class TelemetryEngine:
             "delta_dir": delta_dir,
             "predicted_s": predicted,
             "has_reference": has_ref,
+            "avg_lap_s": self._avg_lap_s(),
+            "session_dist_m": self._session_dist_m + (acc.distance if acc else 0.0),
             "fuel": self._fuel(),
             "tyre_temp_avg": self._tyre_avg(),
             "top_speed_mps": self._top_speed,
@@ -376,6 +390,7 @@ def _band(temp_c, thresholds):
 def format_snapshot(snap, units, thresholds):
     imperial = units == "imperial"
     spd = snap["speed_mps"] * (2.2369363 if imperial else 3.6)
+    dist = snap.get("session_dist_m", 0.0) * (0.000621371 if imperial else 0.001)
     avgs = snap["tyre_temp_avg"]
     tyres = []
     for i, c in enumerate(snap["tyre_temp"]):
@@ -391,10 +406,12 @@ def format_snapshot(snap, units, thresholds):
         "lap": snap["lap"],
         "current_lap": _fmt_time(snap["current_lap_s"]),
         "best_lap": _fmt_time(snap["best_s"]),
+        "avg_lap": _fmt_time(snap.get("avg_lap_s")),
         "delta": None if snap["delta_s"] is None else round(snap["delta_s"], 2),
         "predicted": _fmt_time(snap["predicted_s"]),
         "has_reference": snap["has_reference"],
         "time_of_day": _fmt_clock(snap["time_of_day_ms"]),
+        "session_distance": round(dist, 1),
         "fuel": {
             "level": round(lvl, 1),
             "per_lap": (None if fuel["per_lap"] is None
@@ -408,6 +425,7 @@ def format_snapshot(snap, units, thresholds):
             "speed": "mph" if imperial else "km/h",
             "temp": "°F" if imperial else "°C",
             "fuel": "gal" if imperial else "L",
+            "distance": "mi" if imperial else "km",
         },
     }
 

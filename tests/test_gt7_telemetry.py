@@ -266,6 +266,22 @@ def t_engine_fuel_continuous_decay():
     assert f["per_lap"] is not None and abs(f["per_lap"] - 2.0) < 0.3
 
 
+def t_engine_fuel_per_lap_is_whole_session_not_last3():
+    # Twin of t_engine_avg_lap_is_whole_session_not_last3, for the fuel side.
+    # Four completed fuel laps with burns 6/2/2/2 L: the whole-session mean is
+    # 3.0 L, while a rolling last-3 window would give 2.0 L. Proves fuel per-lap
+    # averages the WHOLE session (the old 3-lap window is gone). fuel_start drops
+    # 60->54 (6 L burn), then 54->52->50->48 (2 L each); the 5th feed only closes
+    # lap 4 (its own burn is non-positive and excluded).
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for lap, fs in ((1, 60.0), (2, 54.0), (3, 52.0), (4, 50.0), (5, 48.0)):
+        t = _feed_lap(eng, t, lap, duration=10.0, speed=50.0, fuel_start=fs)
+    per_lap = eng.snapshot()["fuel"]["per_lap"]
+    assert per_lap is not None
+    assert abs(per_lap - 3.0) < 0.5, per_lap   # whole-session 3.0, not last-3 (~2.0)
+
+
 def t_engine_trace_decimates_and_windows():
     eng = tm.TelemetryEngine()
     t = 100.0
@@ -475,6 +491,41 @@ def t_engine_time_of_day_survives_session_reset():
     assert s["time_of_day_ms"] == 45000000                    # clock kept, not blanked
 
 
+def t_engine_avg_lap_is_whole_session_not_last3():
+    # Four clean laps of different durations: the average must be the mean of ALL
+    # four, not just the last three (proves the rolling-3 window is gone).
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = 100.0
+    for lap, dur in ((1, 10.0), (2, 20.0), (3, 12.0), (4, 18.0)):
+        _feed_lap(eng, t, lap, duration=dur, speed=50.0)
+        t += dur
+    # lap 5 edge already closed lap 4 inside _feed_lap's next call chain; read avg
+    avg = eng.snapshot()["avg_lap_s"]
+    assert avg is not None
+    assert abs(avg - (10.0 + 20.0 + 12.0 + 18.0) / 4) < 0.5, avg   # ~15.0, not last-3 (~16.67)
+
+
+def t_engine_avg_lap_none_without_laps():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=1, speed_mps=50.0)), 100.0)
+    assert eng.snapshot()["avg_lap_s"] is None
+
+
+def t_format_surfaces_avg_lap():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70, 70, 70, 70), "lap": 3,
+            "current_lap_s": 5.0, "best_s": 90.0, "delta_s": None, "predicted_s": None,
+            "has_reference": True, "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0),
+            "top_speed_mps": 0.0, "time_of_day_ms": None, "avg_lap_s": 92.5,
+            "session_dist_m": 0.0,
+            "fuel": {"level": 40.0, "per_lap": 2.5, "laps_remaining": 16.0,
+                     "time_remaining_s": 1600.0}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["avg_lap"] == "1:32.500"
+    snap["avg_lap_s"] = None
+    assert tm.format_snapshot(snap, "metric", (70, 85, 95))["avg_lap"] is None
+
+
 def t_engine_pit_lap_via_standstill_excluded():
     eng = tm.TelemetryEngine()
     eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
@@ -485,7 +536,8 @@ def t_engine_pit_lap_via_standstill_excluded():
         eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=1)), t); t += 0.1
     eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t)   # lap edge
     assert eng.snapshot()["has_reference"] is False       # pit lap never became reference
-    assert eng._lap_times == [] and eng._lap_fuel == []   # and out of the time/fuel averages
+    assert eng._lap_time_n == 0 and eng._lap_fuel_n == 0
+    assert eng.snapshot()["avg_lap_s"] is None
 
 
 def t_engine_pit_lap_via_fuel_rise_excluded():
@@ -589,6 +641,81 @@ def t_store_source_roundtrip():
     assert store.data()["source"] == "192.168.1.42"
     store.set_source(None)                       # clearable (e.g. relaunch)
     assert store.data()["source"] is None
+
+
+def t_engine_session_distance_accumulates_incl_pit():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    # lap 1: ~10 s @ 50 m/s ≈ 500 m
+    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
+    d1 = eng.snapshot()["session_dist_m"]
+    assert 400 < d1 < 600, d1
+    # lap 2 also ~500 m -> ~1000 m total
+    _feed_lap(eng, 110.0, 2, duration=10.0, speed=50.0)
+    d2 = eng.snapshot()["session_dist_m"]
+    assert 900 < d2 < 1100, d2
+    assert d2 > d1
+    assert eng._lap_time_n == 2   # both laps 1+2 are clean and admitted to the average
+
+    # lap 3: a genuine PIT lap -- ~8 s driving (~400 m), then a sustained standstill
+    # past PIT_STOP_MIN_S (same construction as t_engine_pit_lap_via_standstill_excluded,
+    # the existing working pit-lap test in this file). It must be EXCLUDED from the
+    # lap-time/fuel averages (acc.pit) -- but its driven distance must STILL be banked
+    # into session_dist_m. This is the binding "pit distance is included" constraint;
+    # the assertions below fail if pit-lap distance were (wrongly) excluded.
+    t = 120.0
+    for _ in range(80):                                   # ~8 s driving
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=3)), t); t += 0.1
+    for _ in range(30):                                   # ~3 s stationary (pit box)
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=3)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=4)), t)   # lap edge -> finalises lap 3
+    # the pit lap was excluded from the average (proves it really was classified as pit):
+    assert eng._lap_time_n == 2 and eng._lap_fuel_n == 0
+    d3 = eng.snapshot()["session_dist_m"]
+    assert d3 > d2, d3                        # pit lap's driven distance WAS banked
+    pit_dist = d3 - d2
+    assert 300 < pit_dist < 500, pit_dist     # ~400 m driven before the standstill
+
+
+def t_engine_session_distance_resets_on_session_boundary():
+    eng = tm.TelemetryEngine()
+    eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
+    t = _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)   # banks lap 1 (~500 m); now on lap 2
+    d_after_lap1 = eng.snapshot()["session_dist_m"]
+    assert d_after_lap1 > 100
+    # Drive several more packets on the now-LIVE (unfinished) lap 2 so it accumulates
+    # clearly non-zero distance -- right at the edge the live lap is empty (0 m), which
+    # can't distinguish a real reset from a coincidentally-empty live lap. Proving the
+    # total visibly grows with the live lap first makes the reset below meaningful.
+    for _ in range(50):                                        # ~5 s @ 50 m/s -> ~250 m live
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t); t += 0.1
+    d_with_live = eng.snapshot()["session_dist_m"]
+    assert d_with_live > d_after_lap1 + 100, d_with_live       # live lap distance is counted
+    # lap counter backwards = new session -> full reset, including the live accumulator
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), t + 1.0)
+    assert eng.snapshot()["session_dist_m"] == 0.0
+
+
+def t_engine_session_distance_includes_live_lap():
+    eng = tm.TelemetryEngine()
+    t = 100.0
+    for _ in range(100):    # ~10 s @ 50 m/s in the CURRENT (unfinished) lap
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=1)), t); t += 0.1
+    assert eng.snapshot()["session_dist_m"] > 400   # live lap counted, no edge yet
+
+
+def t_format_surfaces_session_distance():
+    snap = {"speed_mps": 0.0, "tyre_temp": (70, 70, 70, 70), "lap": 2,
+            "current_lap_s": 0.0, "best_s": None, "delta_s": None, "predicted_s": None,
+            "has_reference": False, "tyre_temp_avg": (70.0, 70.0, 70.0, 70.0),
+            "top_speed_mps": 0.0, "time_of_day_ms": None, "avg_lap_s": None,
+            "session_dist_m": 2500.0,
+            "fuel": {"level": 10.0, "per_lap": None, "laps_remaining": None,
+                     "time_remaining_s": None}}
+    out = tm.format_snapshot(snap, "metric", (70, 85, 95))
+    assert out["session_distance"] == 2.5 and out["units"]["distance"] == "km"
+    imp = tm.format_snapshot(snap, "imperial", (70, 85, 95))
+    assert abs(imp["session_distance"] - 1.6) < 0.1 and imp["units"]["distance"] == "mi"
 
 
 if __name__ == "__main__":
