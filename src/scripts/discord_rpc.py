@@ -206,10 +206,25 @@ def _default_connect(endpoint):
 def _default_post_form(url, form):
     import urllib.parse
     body = urllib.parse.urlencode(form).encode("utf-8")
-    with http_util.open_url(
-            url, data=body, method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with http_util.open_url(
+                url, data=body, method="POST",
+                headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except http_util.HTTPError as exc:
+        # Surface Discord's error body (e.g. an unregistered http://localhost
+        # redirect, or a bad client secret) instead of a bare "HTTP Error 400" —
+        # the detail is what tells the operator how to fix it. Discord never echoes
+        # the client secret, so this is safe to log.
+        detail = ""
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            detail = payload.get("error_description") or payload.get("error") or ""
+        except Exception:  # noqa: BLE001 — the body may be empty or non-JSON
+            pass
+        raise RuntimeError(
+            "Discord token endpoint returned HTTP %s%s"
+            % (exc.code, (": " + detail) if detail else "")) from exc
 
 
 class DiscordVoiceClient:

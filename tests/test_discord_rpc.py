@@ -209,6 +209,32 @@ def t_client_read_frame_times_out_instead_of_hanging():
     assert ok is False and isinstance(note, str)
 
 
+def t_default_post_form_surfaces_discord_error_body():
+    # A 400 from Discord's token endpoint must surface the response body's reason
+    # (e.g. a missing http://localhost redirect, or a bad client secret) instead of
+    # a bare "HTTP Error 400: Bad Request" — the detail is what tells the operator
+    # how to fix it. The client secret is never echoed by Discord, so this is safe.
+    import io, urllib.error
+    body = (b'{"error":"invalid_request",'
+            b'"error_description":"Invalid \\"redirect_uri\\" in request."}')
+
+    def boom(url, **kw):
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(body))
+
+    orig = m.http_util.open_url
+    m.http_util.open_url = boom
+    try:
+        raised = None
+        try:
+            m._default_post_form(m.TOKEN_URL, {"grant_type": "authorization_code"})
+        except RuntimeError as exc:
+            raised = str(exc)
+        assert raised is not None, "expected RuntimeError carrying the body"
+        assert "400" in raised and "redirect_uri" in raised, raised
+    finally:
+        m.http_util.open_url = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
