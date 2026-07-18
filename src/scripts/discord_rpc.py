@@ -206,10 +206,25 @@ def _default_connect(endpoint):
 def _default_post_form(url, form):
     import urllib.parse
     body = urllib.parse.urlencode(form).encode("utf-8")
-    with http_util.open_url(
-            url, data=body, method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with http_util.open_url(
+                url, data=body, method="POST",
+                headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except http_util.HTTPError as exc:
+        # Surface Discord's error body (e.g. an unregistered http://localhost
+        # redirect, or a bad client secret) instead of a bare "HTTP Error 400" —
+        # the detail is what tells the operator how to fix it. Discord never echoes
+        # the client secret, so this is safe to log.
+        detail = ""
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            detail = payload.get("error_description") or payload.get("error") or ""
+        except Exception:  # noqa: BLE001 — the body may be empty or non-JSON
+            pass
+        raise RuntimeError(
+            "Discord token endpoint returned HTTP %s%s"
+            % (exc.code, (": " + detail) if detail else "")) from exc
 
 
 class DiscordVoiceClient:
@@ -311,8 +326,20 @@ class DiscordVoiceClient:
         # the human to click, so it gets the longer consent timeout.
         self._send(conn, msg_authorize(self.cid))
         _op, msg = self._read_frame(conn, self._consent_timeout)
-        code = (msg.get("data") or {}).get("code")
-        if not code:
+        data = msg.get("data") or {}
+        if msg.get("evt") == "ERROR":
+            # AUTHORIZE itself failed — most commonly invalid_scope, because the `rpc`
+            # scope is gated to the app's Owner + App Testers and the logged-in Discord
+            # account is not on the App Testers list (owner status alone is NOT enough:
+            # add the account under Dev Portal → App Testers, then restart Discord).
+            # data["code"] here is a NUMERIC RPC error code, NOT an OAuth code — never
+            # forward it to the token endpoint (doing so produced a misleading
+            # "400 Invalid code" that hid the real cause).
+            raise RuntimeError(
+                "Discord AUTHORIZE failed: "
+                + str(data.get("message") or data.get("code") or "unknown error"))
+        code = data.get("code")
+        if not isinstance(code, str) or not code:
             raise RuntimeError("Discord authorization was declined or timed out")
         resp = self._post(TOKEN_URL, token_exchange_body(self.cid, self.sec, code))
         if not resp.get("access_token"):

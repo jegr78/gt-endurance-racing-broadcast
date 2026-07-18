@@ -209,6 +209,53 @@ def t_client_read_frame_times_out_instead_of_hanging():
     assert ok is False and isinstance(note, str)
 
 
+def t_client_authorize_error_surfaces_message_not_code():
+    # If AUTHORIZE returns an ERROR frame (e.g. invalid_scope because the logged-in
+    # account is not an App Tester), the numeric RPC error code must NOT be mis-sent
+    # to the token endpoint. The join fails with Discord's message, and nothing is POSTed.
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "tok.json")   # empty cache -> reaches AUTHORIZE
+    script = [(m.OP_FRAME, {"evt": "READY", "data": {}}),
+              (m.OP_FRAME, {"evt": "ERROR", "cmd": "AUTHORIZE",
+                            "data": {"code": 5000,
+                                     "message": "OAuth2 Error: invalid_scope: ..."}})]
+    posted = []
+    cli = m.DiscordVoiceClient("cid", "sec", path,
+                               connect=lambda ep: _fake_conn(script), endpoints=["ep"],
+                               http_post_form=lambda u, f: posted.append(f) or {},
+                               now=lambda: 5000)
+    ok, note = cli.join("11", "22", allow_consent=True)
+    assert ok is False
+    assert "invalid_scope" in note, note          # Discord's real reason is surfaced
+    assert posted == []                            # the numeric 5000 was NOT exchanged
+
+
+def t_default_post_form_surfaces_discord_error_body():
+    # A 400 from Discord's token endpoint must surface the response body's reason
+    # (e.g. a missing http://localhost redirect, or a bad client secret) instead of
+    # a bare "HTTP Error 400: Bad Request" — the detail is what tells the operator
+    # how to fix it. The client secret is never echoed by Discord, so this is safe.
+    import io, urllib.error
+    body = (b'{"error":"invalid_request",'
+            b'"error_description":"Invalid \\"redirect_uri\\" in request."}')
+
+    def boom(url, **kw):
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(body))
+
+    orig = m.http_util.open_url
+    m.http_util.open_url = boom
+    try:
+        raised = None
+        try:
+            m._default_post_form(m.TOKEN_URL, {"grant_type": "authorization_code"})
+        except RuntimeError as exc:
+            raised = str(exc)
+        assert raised is not None, "expected RuntimeError carrying the body"
+        assert "400" in raised and "redirect_uri" in raised, raised
+    finally:
+        m.http_util.open_url = orig
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
