@@ -639,15 +639,44 @@ def t_engine_session_distance_accumulates_incl_pit():
     d2 = eng.snapshot()["session_dist_m"]
     assert 900 < d2 < 1100, d2
     assert d2 > d1
+    assert eng._lap_time_n == 2   # both laps 1+2 are clean and admitted to the average
+
+    # lap 3: a genuine PIT lap -- ~8 s driving (~400 m), then a sustained standstill
+    # past PIT_STOP_MIN_S (same construction as t_engine_pit_lap_via_standstill_excluded,
+    # the existing working pit-lap test in this file). It must be EXCLUDED from the
+    # lap-time/fuel averages (acc.pit) -- but its driven distance must STILL be banked
+    # into session_dist_m. This is the binding "pit distance is included" constraint;
+    # the assertions below fail if pit-lap distance were (wrongly) excluded.
+    t = 120.0
+    for _ in range(80):                                   # ~8 s driving
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=3)), t); t += 0.1
+    for _ in range(30):                                   # ~3 s stationary (pit box)
+        eng.update(tm.parse_packet(_packet(speed_mps=0.0, lap=3)), t); t += 0.1
+    eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=4)), t)   # lap edge -> finalises lap 3
+    # the pit lap was excluded from the average (proves it really was classified as pit):
+    assert eng._lap_time_n == 2 and eng._lap_fuel_n == 0
+    d3 = eng.snapshot()["session_dist_m"]
+    assert d3 > d2, d3                        # pit lap's driven distance WAS banked
+    pit_dist = d3 - d2
+    assert 300 < pit_dist < 500, pit_dist     # ~400 m driven before the standstill
 
 
 def t_engine_session_distance_resets_on_session_boundary():
     eng = tm.TelemetryEngine()
     eng.update(tm.parse_packet(_packet(lap=0)), 99.0)
-    _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)
-    assert eng.snapshot()["session_dist_m"] > 100
-    # lap counter backwards = new session
-    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), 130.0)
+    t = _feed_lap(eng, 100.0, 1, duration=10.0, speed=50.0)   # banks lap 1 (~500 m); now on lap 2
+    d_after_lap1 = eng.snapshot()["session_dist_m"]
+    assert d_after_lap1 > 100
+    # Drive several more packets on the now-LIVE (unfinished) lap 2 so it accumulates
+    # clearly non-zero distance -- right at the edge the live lap is empty (0 m), which
+    # can't distinguish a real reset from a coincidentally-empty live lap. Proving the
+    # total visibly grows with the live lap first makes the reset below meaningful.
+    for _ in range(50):                                        # ~5 s @ 50 m/s -> ~250 m live
+        eng.update(tm.parse_packet(_packet(speed_mps=50.0, lap=2)), t); t += 0.1
+    d_with_live = eng.snapshot()["session_dist_m"]
+    assert d_with_live > d_after_lap1 + 100, d_with_live       # live lap distance is counted
+    # lap counter backwards = new session -> full reset, including the live accumulator
+    eng.update(tm.parse_packet(_packet(lap=0, speed_mps=0.0)), t + 1.0)
     assert eng.snapshot()["session_dist_m"] == 0.0
 
 
