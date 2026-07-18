@@ -110,9 +110,9 @@
   /* GT3-dash telemetry panel, bottom-right: labels sit above the values as
      separate slots (amber, small-caps letter-spaced) so the value itself
      stays big and each label is independently editable. */
-  #tele-pred,#tele-fuel,#tele-top,#tele-clock{line-height:1.05;
+  #tele-pred,#tele-fuel,#tele-top,#tele-clock,#tele-avg,#tele-dist{line-height:1.05;
     font-family:"SF Mono","Consolas",monospace;color:#eef2f6}
-  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{font:700 11px "SF Mono","Consolas",monospace;
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl,#tele-avg-lbl,#tele-dist-lbl{font:700 11px "SF Mono","Consolas",monospace;
     letter-spacing:.16em;color:#e0b24a;text-shadow:none}
   #tele-pred-lbl{left:1522px;top:720px}
   #tele-top-lbl{left:1712px;top:720px}
@@ -120,6 +120,10 @@
   #tele-pred{left:1522px;top:737px;font-size:30px;font-weight:700}
   #tele-top{left:1712px;top:737px;font-size:30px;font-weight:700}
   #tele-fuel{left:1522px;top:809px;font-size:18px}
+  #tele-avg-lbl{left:1650px;top:792px}
+  #tele-avg{left:1650px;top:809px;font-size:18px}
+  #tele-dist-lbl{left:1780px;top:792px}
+  #tele-dist{left:1780px;top:809px;font-size:18px}
   /* Time of day (on-track clock): top-left, centred in the gap between GT7's
      lap-count header and its standings tower, on a dark translucent bar that
      echoes the tower's name rows; left-aligned to the driver-name column.
@@ -151,7 +155,7 @@
   #tele-panel{position:absolute;left:1500px;top:702px;width:398px;height:362px;
     background:rgba(9,12,17,.7);border:1px solid rgba(120,132,146,.42);border-radius:14px;z-index:0}
   #tele-tyres,#tele-trace,#tele-delta,#tele-pred,#tele-fuel,#tele-top,#tele-clock,
-  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl{z-index:1}
+  #tele-pred-lbl,#tele-fuel-lbl,#tele-top-lbl,#tele-avg-lbl,#tele-dist-lbl,#tele-avg,#tele-dist{z-index:1}
 
   /* Webcam frame, bottom-left: 16:9, bottom-aligned at y=884. Transparent
      interior — the OBS webcam source sits inside; no label text. */
@@ -290,6 +294,10 @@
     <div id="tele-top-lbl" class="el" data-edit="Top speed label" data-edit-kind="text">TOP SPEED</div>
     <div id="tele-top" class="el white" data-edit="Top speed" data-edit-kind="text">--</div>
     <div id="tele-clock" class="el white" data-edit="Time of day" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-avg-lbl" class="el" data-edit="Avg lap label" data-edit-kind="text">AVG LAP</div>
+    <div id="tele-avg" class="el white" data-edit="Avg lap" data-edit-kind="text" style="display:none">--</div>
+    <div id="tele-dist-lbl" class="el" data-edit="Distance label" data-edit-kind="text">DISTANCE</div>
+    <div id="tele-dist" class="el white" data-edit="Distance" data-edit-kind="text">--</div>
   </div>
   <!-- Tyres/fuel capture: a top-level builder box slot (position/size only, no visible
        chrome) driving the real OBS "Solo Tyres/Fuel Capture" device transform on export +
@@ -439,6 +447,14 @@
           (f.per_lap !== null && f.per_lap !== undefined ? " · " + f.per_lap + "/lap" : "") +
           (f.laps_remaining !== null ? " · " + f.laps_remaining + " laps" : "") +
           (f.time_remaining ? " · " + f.time_remaining : "");
+        const avg = document.getElementById("tele-avg");
+        if (d.avg_lap) {
+          avg.style.display = ""; avg.textContent = d.avg_lap;
+        } else {
+          avg.style.display = "none";
+        }
+        document.getElementById("tele-dist").textContent =
+          d.session_distance + " " + d.units.distance;
         document.getElementById("tele-top").textContent =
           d.top_speed + " " + d.units.speed;
         const clock = document.getElementById("tele-clock");
