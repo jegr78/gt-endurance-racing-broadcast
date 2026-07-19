@@ -3684,21 +3684,36 @@ class FeedRing:
             self._cond.notify_all()
 
 
+def fanout_join_offset(ring, prebuffer_s, now):
+    """Absolute cursor a BROADCAST consumer (OBS, program-audio) joins at: prebuffer_s
+    seconds behind the ring's live edge (#533), or the live edge when prebuffer_s <= 0
+    or the ring has no time index (direct-serve / test doubles). Pure — now injected."""
+    if hasattr(ring, "trailing_offset"):
+        return ring.trailing_offset(prebuffer_s, now)
+    if hasattr(ring, "live_offset"):
+        return ring.live_offset()
+    return 0
+
+
 class FeedFanoutServer:
     """Serve one FeedRing to many HTTP consumers (OBS + preview) on a loopback
     port. One accept loop + one handler thread per consumer. A slow/stuck socket
     stalls only its own handler; the ring writer is never touched. Best effort:
     a handler error closes that socket and returns."""
 
-    def __init__(self, host, port, ring, log):
+    def __init__(self, host, port, ring, log, prebuffer_s=0.0):
         self.host = host
         self.port = port
         self.ring = ring
         self.log = log
+        self.prebuffer_s = prebuffer_s        # #533: join OBS this far behind the live edge
         self._sock = None
         self._stop = False
         self._consumers = {}            # id -> {"cycle_ts": float, "snaps": int}
         self._consumers_lock = threading.Lock()
+
+    def _join_offset(self, now):
+        return fanout_join_offset(self.ring, self.prebuffer_s, now)
 
     def start(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3724,7 +3739,7 @@ class FeedFanoutServer:
             conn.sendall(b"HTTP/1.0 200 OK\r\n"
                          b"Content-Type: video/mp2t\r\n"
                          b"Connection: close\r\n\r\n")
-            cursor = self.ring.live_offset()    # join at the live edge
+            cursor = self._join_offset(time.monotonic())   # #533: join prebuffer_s behind the live edge
             cid = id(threading.current_thread())
             with self._consumers_lock:
                 self._consumers[cid] = {"cycle_ts": time.monotonic(), "snaps": 0}
@@ -5915,6 +5930,7 @@ class Relay:
             self.pov.quality_pinned = True
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
+        self.feed_prebuffer_s = feed_prebuffer_s(os.environ)   # #533: OBS/program-audio trailing depth
         self.program_audio = program_audio_enabled(os.environ)
         self._fanout_servers = []
         # Auto-failover to the Intermission scene on confirmed on-air feed loss
@@ -5987,7 +6003,8 @@ class Relay:
             for _name, f in live:
                 f.ring = FeedRing(FANOUT_RING_BYTES)
                 srv = FeedFanoutServer("127.0.0.1", f.port, f.ring,
-                                       logging.getLogger("racecast.fanout." + f.name))
+                                       logging.getLogger("racecast.fanout." + f.name),
+                                       prebuffer_s=self.feed_prebuffer_s)
                 srv.start()
                 f.fanout_server = srv          # #488: the freeze detector reads its consumer snap count
                 self._fanout_servers.append(srv)

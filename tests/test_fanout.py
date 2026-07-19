@@ -420,6 +420,40 @@ def t_feed_prebuffer_s_default_and_overrides():
     assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": "abc"}) == 3.0 # invalid -> default
 
 
+def t_fanout_join_offset_trailing_when_indexed():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))
+    assert m.fanout_join_offset(r, 3.0, now=9.0) == 700
+
+
+def t_fanout_join_offset_zero_prebuffer_is_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    assert m.fanout_join_offset(r, 0.0, now=5.0) == 500
+
+
+def t_fanout_join_offset_falls_back_without_index():
+    class BareLive:
+        def live_offset(self):
+            return 42
+    assert m.fanout_join_offset(BareLive(), 3.0, now=9.0) == 42
+
+    class Bare:
+        pass
+    assert m.fanout_join_offset(Bare(), 3.0, now=9.0) == 0
+
+
+def t_fanout_server_join_uses_prebuffer():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))
+    srv = m.FeedFanoutServer("127.0.0.1", 0, r, m.logging.getLogger("t533"),
+                             prebuffer_s=3.0)
+    assert srv.prebuffer_s == 3.0
+    assert srv._join_offset(now=9.0) == 700
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
