@@ -1543,6 +1543,84 @@ def t_session_next_json_marks_dead_on_eof():
     assert s.alive is False
 
 
+# --------------------------------------------------------------------------
+# session= reuse (#537 task 2) — a passed-in session skips connect/close;
+# an omitted one keeps today's own-connect-own-close behavior byte-identical.
+# --------------------------------------------------------------------------
+class _ReuseFakeSession:
+    def __init__(self, responses):
+        self.responses = dict(responses)   # request_type -> responseData
+        self.alive = True
+        self.closed = False
+        self.requests = []
+
+    def request(self, rt, rd):
+        self.requests.append((rt, rd))
+        return self.responses.get(rt, {})
+
+    def close(self):
+        self.closed = True
+
+
+def t_set_input_mute_uses_passed_session_no_connect_no_close():
+    fs = _ReuseFakeSession({"SetInputMute": {}})
+    called = {"connect": 0}
+    orig = m._connect
+
+    def _fail_if_called(*a, **k):
+        called["connect"] += 1
+        return None, "x"
+
+    m._connect = _fail_if_called
+    try:
+        ok, note = m.set_input_mute("Feed A", True, session=fs)
+    finally:
+        m._connect = orig
+    assert ok is True and note == "", (ok, note)
+    assert called["connect"] == 0, "must NOT open its own connection"
+    assert fs.closed is False, "must NOT close a session it did not open"
+    assert fs.requests and fs.requests[0][0] == "SetInputMute"
+
+
+def t_get_program_screenshot_uses_passed_session_no_connect_no_close():
+    raw = b"JPEGDATA"
+    data_uri = "data:image/jpg;base64," + base64.b64encode(raw).decode()
+    fs = _ReuseFakeSession({
+        "GetCurrentProgramScene": {"currentProgramSceneName": "Stint"},
+        "GetSourceScreenshot": {"imageData": data_uri},
+    })
+    called = {"connect": 0}
+    orig = m._connect
+
+    def _fail_if_called(*a, **k):
+        called["connect"] += 1
+        return None, "x"
+
+    m._connect = _fail_if_called
+    try:
+        data, note = m.get_program_screenshot(session=fs)
+    finally:
+        m._connect = orig
+    assert data == raw and note == "", (data, note)
+    assert called["connect"] == 0, "must NOT open its own connection"
+    assert fs.closed is False, "must NOT close a session it did not open"
+    assert [rt for rt, _ in fs.requests] == ["GetCurrentProgramScene", "GetSourceScreenshot"]
+
+
+def t_omitting_session_still_connects_and_closes():
+    # Default path: a stub _connect returns a fake session; the function must
+    # still own the connect + close it — byte-identical to pre-#537 behavior.
+    fs = _ReuseFakeSession({"SetInputMute": {}})
+    orig = m._connect
+    m._connect = lambda *a, **k: (fs, "")
+    try:
+        ok, note = m.set_input_mute("Feed A", True)
+    finally:
+        m._connect = orig
+    assert ok is True and note == ""
+    assert fs.closed is True, "own-session path must close"
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

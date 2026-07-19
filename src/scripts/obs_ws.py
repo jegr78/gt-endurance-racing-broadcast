@@ -547,11 +547,13 @@ def stream_service_payload(platform, key):
                                       "server": svc["server"], "key": key}}
 
 
-def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
+def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0, session=None):
     """One obs-websocket session -> (reachable, stats, note). `stats` is the merged
     parse_obs_stats + parse_stream_status dict (empty {} when the requests fail but
     the session opened). Best-effort: never raises (same contract as probe())."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, {}, note
     try:
@@ -561,7 +563,8 @@ def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0):
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return True, {}, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
@@ -578,7 +581,7 @@ def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
 
 
 def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
-                        password=None, timeout=2.0):
+                        password=None, timeout=2.0, session=None):
     """Make OBS drop its connections to the (just killed) relay feed ports by
     re-applying each feed input's own settings — a forced source rebuild that
     closes the socket without changing anything (see module docstring).
@@ -587,7 +590,9 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
     OBS not running, wrong password, protocol surprise — yields ([], reason)
     and NEVER an exception; stopping the relay must always go through.
     """
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return [], note
     try:
@@ -609,7 +614,8 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
     except Exception as exc:                         # noqa: BLE001 — see docstring
         return [], str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
@@ -659,7 +665,7 @@ def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
 
 
 def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
-                           password=None, timeout=2.0):
+                           password=None, timeout=2.0, session=None):
     """Press 'Refresh cache of current page' (refreshnocache) on every browser
     source whose URL points at the relay — the programmatic right-click →
     Refresh, used after the shipped HUD/timer pages changed (OBS's CEF caches
@@ -668,7 +674,9 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
     Returns (refreshed_input_names, note). Best effort like
     release_feed_inputs(): any failure yields ([], reason), never an exception.
     """
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return [], note
     try:
@@ -687,15 +695,19 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
     except Exception as exc:                         # noqa: BLE001 — see docstring
         return [], str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def get_source_screenshot(source_name, width=640, fmt="jpg", quality=60,
-                          host="127.0.0.1", port=None, password=None, timeout=2.0):
+                          host="127.0.0.1", port=None, password=None, timeout=2.0,
+                          session=None):
     """A scaled screenshot of an OBS source/scene as raw JPEG bytes.
     Returns (bytes, "") or (None, note). Best effort — never raises (same
     contract as release_feed_inputs/get_scene_collection)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
@@ -709,15 +721,19 @@ def get_source_screenshot(source_name, width=640, fmt="jpg", quality=60,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def get_program_screenshot(width=640, fmt="jpg", quality=60,
-                           host="127.0.0.1", port=None, password=None, timeout=2.0):
+                           host="127.0.0.1", port=None, password=None, timeout=2.0,
+                           session=None):
     """Screenshot the current OBS program scene (what viewers see) as raw JPEG
     bytes. Resolves the active scene name, then screenshots it on the same
     session. Returns (bytes, "") or (None, note). Best effort — never raises."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
@@ -735,16 +751,19 @@ def get_program_screenshot(width=640, fmt="jpg", quality=60,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def get_current_program_scene(host="127.0.0.1", port=None,
-                              password=None, timeout=2.0):
+                              password=None, timeout=2.0, session=None):
     """The name of the current OBS program scene (what viewers see), or None.
     Returns (scene_name, "") or (None, note). Best effort — never raises (same
     contract as get_program_screenshot). Used by the auto-failover guard (#378)
     to fire ONLY while OBS is still on the on-air feed scene."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
@@ -756,7 +775,8 @@ def get_current_program_scene(host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 _TRANSITION_KIND = {"cut": "cut_transition", "fade": "fade_transition",
@@ -786,13 +806,15 @@ def resolve_transition(choice, transitions):
 
 def set_current_program_scene(scene, host="127.0.0.1", port=None,
                               password=None, timeout=2.0,
-                              transition=None, duration_ms=None):
+                              transition=None, duration_ms=None, session=None):
     """Switch the OBS program scene (best effort). When `transition`
     ('cut'|'fade'|'stinger') is given, set that transition (resolved by kind via
     GetSceneTransitionList) + duration first, then switch — so a director take
     uses the chosen transition. Stinger with none configured degrades to Cut and
     returns a note. (ok, note); never raises."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     out_note = ""
@@ -813,11 +835,12 @@ def set_current_program_scene(scene, host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
-                            password=None, timeout=2.0):
+                            password=None, timeout=2.0, session=None):
     """Switch OBS to `scene` ONLY when no stream output is active — never cut a
     live program. Reads GetStreamStatus first; if the stream is live, leaves the
     program scene untouched. Best effort — never raises (same contract as
@@ -825,7 +848,9 @@ def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
       "switched" — OBS was idle; SetCurrentProgramScene sent
       "live"     — OBS is streaming; NO switch sent (note explains)
       "error"    — could not reach OBS / a request failed (note has the reason)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return "error", note
     try:
@@ -837,13 +862,16 @@ def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return "error", str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
-                     password=None, timeout=2.0):
+                     password=None, timeout=2.0, session=None):
     """Set an OBS audio input volume in dB (best effort). (ok, note)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -853,13 +881,16 @@ def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_input_mute(input_name, muted, host="127.0.0.1", port=None,
-                   password=None, timeout=2.0):
+                   password=None, timeout=2.0, session=None):
     """Set an OBS audio input mute state (best effort). (ok, note)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -869,17 +900,20 @@ def set_input_mute(input_name, muted, host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_stream(active, host="127.0.0.1", port=None,
-               password=None, timeout=2.0):
+               password=None, timeout=2.0, session=None):
     """Start or stop the OBS stream output (best effort). `active` True ->
     StartStream, False -> StopStream. Idempotent: if OBS is ALREADY in the
     requested state, returns (True, "") without sending a start/stop, so a
     double-click or retry never surfaces OBS's "output already active" error.
     (ok, note); never raises."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -891,11 +925,12 @@ def set_stream(active, host="127.0.0.1", port=None,
     except Exception as exc:                       # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_stream_service(platform, key, host="127.0.0.1", port=None,
-                       password=None, timeout=2.0):
+                       password=None, timeout=2.0, session=None):
     """Set OBS's stream service + key for a single-channel event (best effort).
     HARD GUARD: refuses while OBS is streaming — a live service/key change is
     unsafe — returning (False, "OBS is streaming — stop the broadcast before
@@ -905,7 +940,9 @@ def set_stream_service(platform, key, host="127.0.0.1", port=None,
         data = stream_service_payload(platform, key)
     except ValueError as exc:
         return False, str(exc)
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -918,17 +955,20 @@ def set_stream_service(platform, key, host="127.0.0.1", port=None,
     except Exception as exc:                       # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
-                   password=None, timeout=2.0):
+                   password=None, timeout=2.0, session=None):
     """One-session panel-refresh snapshot: current program scene + the enabled state
     of each (scene, source) + the mute/volume of each audio input. `sources` =
     [(scene, source), …]; `inputs` = [name, …]. Returns (state, "") or (None, note);
     a per-item OBS error leaves that item's fields None rather than failing the whole
     read. Best effort — never raises."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
@@ -968,18 +1008,22 @@ def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
     except Exception as exc:                          # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
-                       host="127.0.0.1", port=None, password=None, timeout=2.0):
+                       host="127.0.0.1", port=None, password=None, timeout=2.0,
+                       session=None):
     """Reflect which feed (A/B) is on air into OBS: show/hide the Stint-scene
     sources, mute/unmute the feed audio inputs, and (do_cut) cut the program to
     Stint. Best effort by design: returns (applied_intents, note) and NEVER
     raises — a handover must go through even if OBS is closed/locked. On any
     failure the relay falls back to the manual panel/Companion controls."""
     intents = feed_state_intents(live, do_cut, scene=scene, sources=sources)
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return [], note
     applied = []
@@ -1003,7 +1047,8 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return applied, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_feed_close_when_inactive(inputs, value=True, host="127.0.0.1", port=None,
@@ -1031,11 +1076,13 @@ def set_feed_close_when_inactive(inputs, value=True, host="127.0.0.1", port=None
 
 
 def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
-                           password=None, timeout=2.0):
+                           password=None, timeout=2.0, session=None):
     """Enable/disable a scene item (best effort). Returns (ok, note); (False,
     reason) on any failure — OBS closed, wrong password, item missing — NEVER an
     exception (same contract as release_feed_inputs/get_scene_collection)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -1050,17 +1097,20 @@ def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_scene_item_transform(scene, source, transform, host="127.0.0.1", port=None,
-                             password=None, timeout=2.0):
+                             password=None, timeout=2.0, session=None):
     """Set a scene item's transform (best effort). `transform` is the
     obs-websocket sceneItemTransform dict (see pov_scene_item_transform).
     Mirrors set_scene_item_enabled: GetSceneItemId -> SetSceneItemTransform.
     Returns (ok, note); (False, reason) on any failure — OBS closed, wrong
     password, item missing — NEVER an exception."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -1075,17 +1125,20 @@ def set_scene_item_transform(scene, source, transform, host="127.0.0.1", port=No
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0,
-                         expected=EXPECTED_SCENE_COLLECTION):
+                         expected=EXPECTED_SCENE_COLLECTION, session=None):
     """Ask OBS which scene collection is active and classify it against
     `expected` (default EXPECTED_SCENE_COLLECTION). Returns (status_dict, note);
     (None, reason) on any failure — OBS closed, wrong password, protocol
     surprise — NEVER an exception (same best-effort contract as
     release_feed_inputs/refresh_browser_inputs)."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return None, note
     try:
@@ -1097,11 +1150,12 @@ def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
-                         port=None, password=None, timeout=2.0):
+                         port=None, password=None, timeout=2.0, session=None):
     """Switch OBS to scene collection `name`. Returns (ok, note). Best effort:
     - already on `name`            -> (True, "already on '<name>'"), no switch
     - `name` not in the live list  -> (False, "...not found...") — never creates
@@ -1112,7 +1166,9 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
     relay feeds). `racecast event start` calls this automatically to align OBS
     with the active profile (best-effort, gated by RACECAST_OBS_COLLECTION_SWITCH);
     `racecast obs collection set` is the manual path."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return False, note
     try:
@@ -1129,4 +1185,5 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return False, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
