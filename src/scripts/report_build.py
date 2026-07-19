@@ -118,7 +118,10 @@ def _quality(samples):
     sys_mem = _num(samples, "sys_mem_pct")
     net_down = [v / 1000.0 for v in _num(samples, "sys_net_down_kbps")]
     net_up = [v / 1000.0 for v in _num(samples, "sys_net_up_kbps")]
-    if not any([kbps, dropped, cong, cpu, fps, rskip, sys_cpu, sys_mem, net_down, net_up]):
+    # #535: worst inbound inter-arrival gap across both feeds (peak only — averaging a
+    # per-interval max is meaningless). Surfaces source jitter the drop/OBS detectors miss.
+    gaps = _num(samples, "feed_a_max_gap_s") + _num(samples, "feed_b_max_gap_s")
+    if not any([kbps, dropped, cong, cpu, fps, rskip, sys_cpu, sys_mem, net_down, net_up, gaps]):
         return None
     return {"stream_kbps_avg": _avg(kbps), "stream_kbps_peak": _peak(kbps),
             "dropped_pct_avg": _avg(dropped), "dropped_pct_peak": _peak(dropped),
@@ -128,7 +131,8 @@ def _quality(samples):
             "sys_cpu_avg": _avg(sys_cpu), "sys_cpu_peak": _peak(sys_cpu),
             "sys_mem_avg": _avg(sys_mem), "sys_mem_peak": _peak(sys_mem),
             "net_down_avg": _avg(net_down), "net_down_peak": _peak(net_down),
-            "net_up_avg": _avg(net_up), "net_up_peak": _peak(net_up)}
+            "net_up_avg": _avg(net_up), "net_up_peak": _peak(net_up),
+            "inbound_gap_peak": _peak(gaps)}
 
 
 def _on_air(sample_groups, name_for_stint):
@@ -504,7 +508,8 @@ def render_html(report):
                  ("Host CPU (%)", q["sys_cpu_avg"], q["sys_cpu_peak"]),
                  ("Host RAM (%)", q["sys_mem_avg"], q["sys_mem_peak"]),
                  ("Net down (Mbps)", q["net_down_avg"], q["net_down_peak"]),
-                 ("Net up (Mbps)", q["net_up_avg"], q["net_up_peak"])]
+                 ("Net up (Mbps)", q["net_up_avg"], q["net_up_peak"]),
+                 ("Max inbound gap (s)", "—", q["inbound_gap_peak"])]
         parts.append(_table(["Metric", "Average", "Peak"],
                             [(m, a if a is not None else "—", p if p is not None else "—")
                              for m, a, p in qrows]))

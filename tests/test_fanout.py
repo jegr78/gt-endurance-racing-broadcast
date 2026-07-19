@@ -510,6 +510,28 @@ def t_fanout_capped_read_falls_back_without_time_index():
     assert calls["high"] is None            # live-edge branch: no cap passed to read
 
 
+def t_feed_inbound_degraded_thresholds():
+    # gap must exceed BOTH the reserve and the floor
+    assert m.feed_inbound_degraded(0.5, 3.0, 1.0) is False   # below both
+    assert m.feed_inbound_degraded(2.0, 3.0, 1.0) is False   # below the 3s reserve
+    assert m.feed_inbound_degraded(3.5, 3.0, 1.0) is True    # above the reserve
+    assert m.feed_inbound_degraded(1.5, 0.0, 1.0) is True    # prebuffer off -> floor governs
+    assert m.feed_inbound_degraded(0.9, 0.0, 1.0) is False   # below the floor
+
+
+def t_update_max_gap_tracks_and_ignores_none():
+    assert m.update_max_gap(0.0, None, 100.0) == 0.0         # no prior byte -> unchanged
+    assert m.update_max_gap(0.0, 98.0, 100.0) == 2.0         # 2s gap
+    assert m.update_max_gap(2.0, 99.5, 100.0) == 2.0         # smaller gap keeps the max
+
+
+def t_feed_stall_config():
+    assert m.feed_stall_floor_s({}) == 1.0
+    assert m.feed_stall_floor_s({"RACECAST_FEED_STALL_FLOOR_S": "0.5"}) == 0.5
+    assert m.feed_stall_signal_enabled({}) is True
+    assert m.feed_stall_signal_enabled({"RACECAST_FEED_STALL_SIGNAL": "0"}) is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

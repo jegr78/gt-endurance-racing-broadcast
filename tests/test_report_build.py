@@ -92,6 +92,16 @@ def t_quality_host_absent_degrades_to_dashes():
     assert q["sys_cpu_avg"] is None and q["net_down_avg"] is None, q
 
 
+def t_quality_includes_inbound_gap_peak():
+    # #535: the worst inbound inter-arrival gap across both feeds surfaces as a peak row.
+    samples = [_sample(0.0, feed_a_max_gap_s=0.5, feed_b_max_gap_s=0.0),
+               _sample(30.0, feed_a_max_gap_s=3.4, feed_b_max_gap_s=2.1)]
+    q = rb._quality(samples)
+    assert q["inbound_gap_peak"] == 3.4, q            # worst gap across A and B
+    html = rb.render_html(rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0, host="BOX"))
+    assert "Max inbound gap (s)" in html, "inbound-gap row missing"
+
+
 def t_build_report_includes_host():
     samples = [_sample(0.0), _sample(30.0)]
     rep = rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0, host="STREAM-BOX")

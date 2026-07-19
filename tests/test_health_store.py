@@ -620,6 +620,22 @@ def t_migrate_adds_render_skip_rate_v7_lossless_and_charted():
         conn2.close()
 
 
+def t_max_gap_columns_round_trip():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    conn = hs.open_db(_os.path.join(d, "h.db"))
+    try:
+        hs.migrate(conn)
+        hs.record(conn, {"ts": 5.0, "health_level": "green",
+                         "feed_a_max_gap_s": 2.5, "feed_b_max_gap_s": 0.0}, "tick")
+        got = hs.query_range(conn, 0, 10)[0]
+        assert got["feed_a_max_gap_s"] == 2.5 and got["feed_b_max_gap_s"] == 0.0
+        series = hs.numeric_series([got])
+        assert "feed_a_max_gap_s" in series           # NUMERIC_FIELDS wired
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
