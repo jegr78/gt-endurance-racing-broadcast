@@ -24,10 +24,10 @@ DISCORD_AUDIO_CANONICAL = ("sck_audio_capture",
 
 
 # The canonical scene-collection name in the committed source. Mirrors
-# obs_ws.EXPECTED_SCENE_COLLECTION and src/obs/GT_Endurance.json's "name";
+# obs_ws.EXPECTED_SCENE_COLLECTION and src/obs/GT_Racing_Endurance.json's "name";
 # M5 renames all three together. Folding an export back resets the name so a
 # per-league name (written by setup-assets) never lands in git.
-CANONICAL_COLLECTION_NAME = "GT Endurance Racing"
+CANONICAL_COLLECTION_NAME = "GT Racing Endurance"
 
 
 def canonicalize_name(d):

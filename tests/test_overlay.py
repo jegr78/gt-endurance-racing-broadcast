@@ -223,13 +223,36 @@ def t_ob_extract_slots_from_real_hud():
     ids = [s["id"] for s in slots]
     # Each team is three independent slots (logo / number / name; issue #136),
     # plus the POV placeholder box (issue #141), the POV name label (issue #130),
-    # and the merged clock slot.
+    # the league-logo box (Solo Commentary HUD, epic #300), and the merged clock slot.
     assert ids == ["stint", "session", "streamer", "round-top", "round-flag",
                    "round-country",
                    "team1-logo", "team1-num", "team1-name", "team1-brand",
                    "team2-logo", "team2-num", "team2-name", "team2-brand",
                    "team3-logo", "team3-num", "team3-name", "team3-brand",
-                   "race-control", "flag-status", "pov", "pov-name", "clock"]
+                   "race-control", "flag-status", "pov", "pov-name", "league-logo",
+                   # Stream-chat slot (Solo Commentary HUD, epic #300): self-gating
+                   # box rendering the read-only broadcast chat (issue #294),
+                   # hidden when /broadcast-chat/data is 404/empty.
+                   "chat",
+                   # Solo-mode telemetry block (issue #324): self-gating,
+                   # hidden in endurance (no /telemetry/data there). The panel
+                   # background and webcam frame are builder box slots too
+                   # (position/size only — the webcam box also drives the real
+                   # OBS "Solo Webcam" device transform, see
+                   # OVERLAY_SLOT_OBS_SOURCES).
+                   "tele-panel", "webcam",
+                   "tele-tyres", "tele-trace", "tele-delta",
+                   "tele-pred-lbl", "tele-pred",
+                   "tele-fuel-lbl", "tele-fuel",
+                   "tele-top-lbl", "tele-top",
+                   "tele-clock",
+                   "tele-avg-lbl", "tele-avg",
+                   "tele-dist-lbl", "tele-dist",
+                   # "tyres-capture" is a TOP-LEVEL slot (outside #tele) so it stays
+                   # builder-editable in a Commentary profile that has no telemetry;
+                   # it drives the "Solo Tyres/Fuel Capture" OBS device transform
+                   # (Task 4, epic #300).
+                   "tyres-capture", "clock"]
     by_id = {s["id"]: s for s in slots}
     assert by_id["stint"]["label"] == "Stint banner"
     # default props (no data-edit-props) include the text set, not the team-only keys
@@ -282,6 +305,18 @@ def t_ob_team_logo_img_keeps_aspect_for_alignment():
     assert "max-width: 100%" in img_rule
     box_rule = re.search(r"\.team-logo\s*\{[^}]*\}", style).group(0)
     assert "justify-content: center" in box_rule   # centered default preserved
+
+
+def t_ob_hud_has_telemetry_slots():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert {"tele-tyres", "tele-trace", "tele-delta", "tele-pred", "tele-fuel"} <= ids
+
+
+def t_ob_hud_has_top_speed_slot():
+    with open(os.path.join(ROOT, "src", "obs", "hud.html")) as f:
+        ids = {s["id"] for s in ob.extract_slots(f.read())}
+    assert "tele-top" in ids
 
 
 def t_ob_hud_has_clock_slot():
@@ -564,7 +599,7 @@ def t_ob_sample_has_clock_in_hud_only():
 import json as _json
 
 def t_obs_collection_has_no_timer_source():
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"), encoding="utf-8") as f:
         col = _json.load(f)
     blob = _json.dumps(col)
     assert "HUD Race Timer" not in blob, "the separate timer source must be removed"
@@ -576,7 +611,7 @@ def t_obs_hud_overlay_renders_in_front():
     # where HUD Overlay (text) sits AFTER the Overlay PNG frame so the text draws
     # on top of it). The HUD Overlay source must therefore render in FRONT of both
     # the Overlay frame AND Feed POV, so its #pov border frames the POV video.
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"), encoding="utf-8") as f:
         col = _json.load(f)
     def items_of(src):
         return (src.get("settings") or {}).get("items") or []
@@ -616,7 +651,7 @@ def t_ob_sample_has_flag_and_brand_images():
 
 def t_splitscreen_labels_source_in_collection_splitscreen_scene_only():
     import os, json
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"),
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"),
               encoding="utf-8") as fh:
         d = json.load(fh)
     srcs = [s for s in d.get("sources", []) if s.get("name") == "Splitscreen Labels"]
@@ -841,7 +876,49 @@ def t_pov_box_from_css_float_value():
 
 
 def t_overlay_slot_obs_sources_constant():
-    assert ob.OVERLAY_SLOT_OBS_SOURCES == {"pov": "Feed POV"}
+    assert ob.OVERLAY_SLOT_OBS_SOURCES == {
+        "pov":    {"scene": "Stint",   "source": "Feed POV"},
+        "webcam": {"scene": "Program", "source": "Solo Webcam",
+                   "export_scene": "Program"},
+        "tyres-capture": {"scene": "Program", "source": "Solo Tyres/Fuel Capture",
+                           "export_scene": "Program"},
+    }
+    # POV bakes whole-tree (no export_scene); the webcam/tyres bakes are scene-scoped.
+    assert "export_scene" not in ob.OVERLAY_SLOT_OBS_SOURCES["pov"]
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["webcam"]["export_scene"] == "Program"
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["tyres-capture"]["export_scene"] == "Program"
+
+
+def t_overlay_slot_obs_sources_has_tyres_capture():
+    assert ob.OVERLAY_SLOT_OBS_SOURCES["tyres-capture"] == {
+        "scene": "Program", "source": "Solo Tyres/Fuel Capture",
+        "export_scene": "Program"}
+
+
+def t_box_from_css_webcam_slot():
+    css = "#webcam{left:14px;top:695px;width:336px;height:189px}"
+    assert ob.box_from_css(css, "webcam") == {"left": 14, "top": 695,
+                                              "width": 336, "height": 189}
+
+
+def t_box_from_css_tyres_capture_slot():
+    css = "#tyres-capture{left:7px;top:926px;width:245px;height:84px}"
+    assert ob.box_from_css(css, "tyres-capture") == {"left": 7, "top": 926,
+                                                       "width": 245, "height": 84}
+
+
+def t_box_from_css_default_slot_is_pov():
+    # box_from_css defaults to slot_id="pov" — same result as pov_box_from_css.
+    css = "#pov { left: 1516px; top: 600px; width: 384px; height: 216px; }"
+    assert ob.box_from_css(css) == ob.pov_box_from_css(css)
+
+
+def t_pov_box_from_css_is_back_compat_wrapper():
+    # pov_box_from_css must keep working byte-identically post-generalization —
+    # released-product callers still import this exact name (#324).
+    css = "#pov { left: 1516px; top: 600px; }"
+    assert ob.pov_box_from_css(css) == ob.box_from_css(css, "pov") == \
+        {"left": 1516, "top": 600}
 
 
 def t_ob_compile_shear_skewx():

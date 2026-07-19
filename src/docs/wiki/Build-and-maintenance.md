@@ -87,7 +87,7 @@ unsigned, same one-time SmartScreen/Gatekeeper warning as releases.
 ## Round-trips that keep secrets/paths out of git
 
 - **OBS collection.** Edit scenes in OBS, export, then fold back with
-  `python3 tools/tokenize-obs.py exported.json src/obs/GT_Endurance.json` (re-tokenizes
+  `python3 tools/tokenize-obs.py exported.json src/obs/GT_Racing_Endurance.json` (re-tokenizes
   sheet/timer URLs + asset paths). `src/setup-assets.py` does the reverse for a machine
   (injecting the active profile's values).
 - **Companion config.** Export into the gitignored `incoming/` folder, then

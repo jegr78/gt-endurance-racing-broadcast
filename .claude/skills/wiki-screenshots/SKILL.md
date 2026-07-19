@@ -6,7 +6,7 @@ description: Regenerate the wiki/slide screenshots of the relay- and UI-served p
 # Wiki / slide screenshots (Control Center + /console pages)
 
 Regenerate the screenshots of the **relay-served** and **Control-Center-served** pages for
-the GT Endurance Racing Broadcast wiki and onboarding slides. This skill's real value is the
+the GT Racing Broadcast wiki and onboarding slides. This skill's real value is the
 **reproducible fake-content recipe**: how to make the pages show a believable broadcast
 (program monitor, schedule, on-air tally, chat) **without** a real OBS, real cookies, or a
 real league — using the shipped **`demo`** profile and the **`tools/obs-sim.py`** OBS

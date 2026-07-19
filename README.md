@@ -1,6 +1,6 @@
-# GT Endurance Racing Broadcast — Repository
+# GT Racing Broadcast — Repository
 
-Single-source repo for the GT Endurance Racing broadcast producer station.
+Single-source repo for the GT Racing broadcast producer station.
 **Edit only under `src/`.** `dist/` and `runtime/` are generated and gitignored.
 
 📖 **Operator docs & onboarding:** see the [project wiki](https://github.com/jegr78/gt-endurance-racing-broadcast/wiki)
@@ -131,8 +131,8 @@ racecast cookies twitch firefox   # refresh Twitch cookies (only if any stint us
 racecast media             # download the active profile's Intro/Outro clips -> runtime/<profile>/media/
 racecast graphics          # download the active profile's broadcast graphics -> runtime/<profile>/graphics/
 racecast brands            # download per-league brand-logo overrides -> runtime/<profile>/brands/
-racecast setup --out runtime/GT_Endurance.import.json   # localize OBS assets + inject the profile's Sheet ID
-# (default --out is the profile-scoped runtime/<profile>/GT_Endurance.import.json)
+racecast setup --out runtime/GT_Racing_Endurance.import.json   # localize OBS assets + inject the profile's Sheet ID
+# (default --out is the profile-scoped runtime/<profile>/GT_Racing_Endurance.import.json)
 # OBS -> Scene Collection -> Import -> the import JSON above
 ```
 

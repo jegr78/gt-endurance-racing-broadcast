@@ -7,10 +7,13 @@ dist/
 incoming/
 fonts.zip
 # league profiles are machine-local; only the example template + the public
-# demo league ship
+# demo leagues ship (endurance demo + the two solo demos, incl. their committed
+# demo Overlay.png lower-third graphic)
 profiles/*
 !profiles/example/
 !profiles/demo/
+!profiles/solo-commentary/
+!profiles/solo-pov/
 __pycache__/
 *.pyc
 .DS_Store

@@ -69,7 +69,9 @@ def _slides_serve(rel):
     return p, "text/html; charset=utf-8"
 
 
-def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
+def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None,
+         devices_enumerate=None, devices_write=None,
+         ps_discover=None, ps_write=None):
     page = os.path.join(ROOT, "src", "ui", "control-center.html")
     return {"version": "test",
             "page_path": page,
@@ -106,7 +108,7 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "tailscale_peers": lambda: [
                 {"hostname": "producer-b", "ip": "100.64.0.5", "online": True, "os": "macOS"}],
             "obs_collection": lambda: {"ok": True, "current": "Other",
-                                       "expected": "GT Endurance Racing", "match": False,
+                                       "expected": "GT Racing Endurance", "match": False,
                                        "expected_present": True,
                                        "renamed_variant": None},
             "update_check": lambda force=False: {"ok": True, "current": "v1.0.0",
@@ -137,6 +139,15 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "env_read": lambda: {"ok": True, "path": "/x/.env",
                                  "entries": [{"key": "RACECAST_SHEET_ID", "value": "abc"}]},
             "env_write": lambda entries: {"ok": True, "path": "/x/.env", "_got": entries},
+            "devices_enumerate": devices_enumerate or (lambda: {
+                "ok": True, "devices": [], "note": "", "mic": [], "mic_note": ""}),
+            "devices_write": devices_write or (lambda webcam, capture, mic=None, tyres=None: {
+                "ok": True, "path": "/x/.env"}),
+            # default = the "no console found" shape (ok:False for an empty list, the
+            # real ps_discover_data contract); every test that asserts otherwise overrides.
+            "ps_discover": ps_discover or (lambda: {
+                "ok": False, "consoles": [], "note": "", "from_relay": False}),
+            "ps_write": ps_write or (lambda ip: {"ok": True, "path": "/x/.env"}),
             "init_plan": init_plan or (lambda browser="firefox": {
                 "ok": True, "steps": [], "next_steps": []}),
             "init_step": init_step or (lambda key: {"ok": True, "key": key,
@@ -146,8 +157,9 @@ def _ctx(jobs=None, init_plan=None, init_step=None, profile_logo=None):
             "profiles": lambda: {"ok": True, "active": "demo",
                                  "profiles": [{"name": "demo"}, {"name": "erf"}]},
             "profile_use": lambda name: {"ok": True, "active": name},
-            "profile_new": lambda name, source=None: {"ok": True, "name": name,
-                                                      "from": source},
+            "profile_new": lambda name, source=None, kind=None, template=None: {
+                "ok": True, "name": name, "from": source,
+                "kind": kind, "template": template},
             "profile_env_read": lambda: {"ok": True, "path": "/x/profile.env",
                                          "entries": [{"key": "K", "value": "v"}]},
             "profile_env_write": lambda entries: {"ok": True,
@@ -371,7 +383,7 @@ def t_obs_collection_route_wraps_provider():
         code, body = _get(port, "/api/obs-collection")
         data = json.loads(body)
         assert code == 200 and data["ok"] is True
-        assert data["expected"] == "GT Endurance Racing" and data["match"] is False
+        assert data["expected"] == "GT Racing Endurance" and data["match"] is False
     finally:
         httpd.shutdown()
 
@@ -1073,6 +1085,79 @@ def t_env_post_malformed_body_is_400():
         httpd.shutdown()
 
 
+def t_get_devices_returns_enumerated_list():
+    ctx = _ctx(devices_enumerate=lambda: {
+        "ok": True, "devices": [{"name": "Cam", "value": "v0"}], "note": "",
+        "mic": [{"name": "Mic", "value": "m0"}], "mic_note": ""})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/devices")
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["devices"] == [{"name": "Cam", "value": "v0"}]
+        # #307: the shape also carries a separate mic list (audio devices differ
+        # from the video capture/webcam list).
+        assert data["mic"] == [{"name": "Mic", "value": "m0"}]
+    finally:
+        httpd.shutdown()
+
+
+def t_get_devices_route_error_is_500():
+    ctx = _ctx()
+    def boom():
+        raise RuntimeError("obs gone")
+    ctx["devices_enumerate"] = boom
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _get(port, "/api/devices")
+        assert code == 500 and "obs gone" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_writes():
+    seen = {}
+    ctx = _ctx(devices_write=lambda w, c, mic=None, tyres=None: seen.update(
+        webcam=w, capture=c, mic=mic, tyres=tyres) or {"ok": True, "_got": [w, c, mic, tyres]})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/devices/select",
+                                {"webcam": "v0", "capture": "v1", "mic": "m0", "tyres": "t0"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True
+        assert data["_got"] == ["v0", "v1", "m0", "t0"]
+        assert seen == {"webcam": "v0", "capture": "v1", "mic": "m0", "tyres": "t0"}
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_validation_error_is_400():
+    ctx = _ctx(devices_write=lambda w, c, mic=None, tyres=None: {
+        "ok": False, "error": "no device selected"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/devices/select", {"webcam": "", "capture": ""})
+        assert code == 400 and "no device selected" in json.loads(body)["error"]
+    finally:
+        httpd.shutdown()
+
+
+def t_post_devices_select_malformed_body_is_400():
+    httpd, port = _serve(_ctx())
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/devices/select", method="POST",
+            data=b"{not json", headers={"Content-Type": "application/json"})
+        try:
+            with _urlopen(req, timeout=5) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
 def t_init_plan_route_returns_plan():
     ctx = _ctx(init_plan=lambda browser="firefox": {
         "ok": True, "steps": [{"key": "env", "label": ".env", "kind": "gate",
@@ -1165,7 +1250,7 @@ def t_profile_use_post_passes_name():
 def t_profile_new_post_passes_name_and_source():
     seen = []
     ctx = _ctx()
-    ctx["profile_new"] = lambda name, source=None: (
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
         seen.append((name, source)) or {"ok": True, "name": name, "from": source})
     httpd, port = _serve(ctx)
     try:
@@ -1175,6 +1260,24 @@ def t_profile_new_post_passes_name_and_source():
         assert code == 200 and data["ok"] is True
         assert data["name"] == "gt3" and data["from"] == "demo"
         assert seen == [("gt3", "demo")]
+    finally:
+        httpd.shutdown()
+
+
+def t_profile_new_route_forwards_kind_template():
+    seen = []
+    ctx = _ctx()
+    ctx["profile_new"] = lambda name, source=None, kind=None, template=None: (
+        seen.append((name, source, kind, template))
+        or {"ok": True, "name": name, "from": source})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/profile/new",
+                                {"name": "solo1", "from": None,
+                                 "kind": "solo", "template": "pov"})
+        data = json.loads(body)
+        assert code == 200 and data["ok"] is True, (code, body)
+        assert seen == [("solo1", None, "solo", "pov")], seen
     finally:
         httpd.shutdown()
 
@@ -1802,6 +1905,47 @@ def t_api_resources_route():
         data = json.loads(body)
         assert code == 200 and data["available"] is True
         assert data["cpu_pct"] == 42.0 and data["disk_level"] == "green"
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_discover_route():
+    ctx = _ctx(ps_discover=lambda: {"ok": True, "consoles": ["192.168.1.42"],
+                                    "note": "", "from_relay": False})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/discover", {})
+        data = json.loads(body)
+        assert code == 200 and data["consoles"] == ["192.168.1.42"]
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_save_route():
+    saved = {}
+    # NOTE: dict.setdefault(k, v) returns v (truthy here), so the brief's
+    # literal `saved.setdefault("ip", ip) or {"ok": True}` never falls through
+    # to the dict and returns the bare ip string instead -> the route's
+    # `result.get("ok")` then raises AttributeError uncaught, dropping the
+    # connection (RemoteDisconnected) instead of asserting. dict.update()
+    # returns None (falsy), so this recreates the intended record-then-{ok}
+    # behavior.
+    ctx = _ctx(ps_write=lambda ip: saved.update(ip=ip) or {"ok": True})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/save", {"ip": "192.168.1.42"})
+        assert code == 200 and json.loads(body)["ok"] is True
+        assert saved["ip"] == "192.168.1.42"
+    finally:
+        httpd.shutdown()
+
+
+def t_api_ps_save_rejects_bad_ip():
+    ctx = _ctx(ps_write=lambda ip: {"ok": False, "error": f"invalid host/IP: {ip!r}"})
+    httpd, port = _serve(ctx)
+    try:
+        code, body = _post_json(port, "/api/ps/save", {"ip": "bad host!"})
+        assert code == 400 and json.loads(body)["ok"] is False
     finally:
         httpd.shutdown()
 

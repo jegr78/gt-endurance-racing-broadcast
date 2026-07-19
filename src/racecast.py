@@ -15,7 +15,7 @@
   racecast event takeover <A-ip> [--funnel] [--stint N]  # take over from another producer: read A's on-air stint+league, pull chat, bring up at that stint; --funnel <magicdns-host> pulls state over the public Funnel using the league CONSOLE_SECRET
   racecast tailscale up|down|status          # connect / disconnect / inspect Tailscale
   racecast obs refresh                       # force-reload the relay-served OBS browser sources (HUD incl. timer)
-  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Endurance Racing)
+  racecast obs collection [set]              # report the active OBS scene collection (set = switch to GT Racing Endurance)
   racecast obs stream-target <part>          # set OBS stream service+key for a Producer Part (OBS must be stopped)
   racecast obs logs | tailscale logs         # tail OBS's log dir / the Tailscale status-snapshot log (same -f/--list/--archive flags)
   racecast sheet     url | open              # print / open the active league's Google Sheet (built from its SHEET_ID)
@@ -30,6 +30,8 @@
   racecast backup    {create|list|restore|delete} <label>   # named look snapshots (overlay+graphics+media)
   racecast ui [--no-browser]                 # local Control Center web app (port 8089 / RACECAST_UI_PORT)
   racecast freeport [PORT...] [--force]       # free a stuck feed port (default 53001-53003); kills orphaned holders, refuses a running relay/streams
+  racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL]  # enumerate OBS video-capture devices + microphones and save the pick(s) to .env (interactive when no flags given)
+  racecast gt7-discover [--save] [--print] [--timeout N] [--pick I]  # find the PS4/PS5 running GT7 and save its IP
   racecast preflight | speedtest [--json] | cookies [twitch] [browser] | graphics | media | brands | setup [--out PATH] | install-tools [--yes] [--update] | install-apps [--yes] [--update]
   racecast obs-browser [--yes]               # Linux/ARM64: build & install OBS's Browser Source plugin from source (needed for the relay HUD)
   racecast export companion [--out PATH]     # write the Companion button config
@@ -222,7 +224,9 @@ def _profile_env_vars(rc):
              ("RACECAST_DISCORD_VOICE_URL", rc.discord_voice_url),
              ("RACECAST_EVENT_TITLE", rc.event_title),
              ("RACECAST_PROFILE_NAME", rc.name),
-             ("RACECAST_LOGO", rc.logo_path))
+             ("RACECAST_LOGO", rc.logo_path),
+             ("RACECAST_KIND", rc.kind),   # endurance|solo — relay's --solo default
+             ("RACECAST_TEMPLATE", rc.template))  # solo starter template (commentary|pov)
     return {k: v for k, v in pairs if v}
 
 def _apply_active_profile_env():
@@ -542,7 +546,16 @@ def _relay_daemon_argv(rest, frozen):
         return [sys.executable, "relay", "run"] + list(rest)
     return [sys.executable, _relay_script()] + _relay_runtime_args() + list(rest)
 
-def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
+def _setup_import_name(kind=None):
+    """Filename of the localized OBS import for `kind` (default: RACECAST_KIND env).
+    Solo profiles get GT_Racing_Solo.import.json; endurance/unknown get
+    GT_Racing_Endurance.import.json."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
+    return "GT_Racing_Solo.import.json" if kind == "solo" else "GT_Racing_Endurance.import.json"
+
+def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None, kind=None,
+                   profile_graphics=None):
     """Extra argv for a one-shot. The asset writers (graphics/media/setup) get a
     profile-scoped --out (+ setup's --media/--graphics) so their output lands
     under runtime/<profile>/ in every run mode -- those are baked into the OBS
@@ -550,15 +563,22 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     --runtime-dir (preflight, cookies) get the un-scoped BASE runtime, so the
     shared cookie jar stays at runtime/yt-cookies.txt. The user's own --out wins.
     overlay_css: when given and the file exists, injected as --overlay-css for
-    setup (so the OBS collection bakes the active POV-box geometry)."""
+    setup (so the OBS collection bakes the active POV-box geometry). kind: the
+    active profile kind (endurance|solo) picks setup's default --out basename --
+    defaults to RACECAST_KIND from the environment (the CLI applies the active
+    profile's env, incl. RACECAST_KIND, before dispatching a one-shot -- the same
+    source setup-assets itself reads), so callers rarely need to pass it explicitly."""
+    if kind is None:
+        kind = pcfg.normalize_kind(os.environ.get("RACECAST_KIND", ""))
     extra = []
     if command in RUNTIME_DIR_ONESHOTS:
         extra += ["--runtime-dir", base_dir]
     if "--out" not in rest:
+        setup_name = _setup_import_name(kind)
         out = {"graphics": os.path.join(runtime_dir, "graphics"),
                "media": os.path.join(runtime_dir, "media"),
                "brands": os.path.join(runtime_dir, "brands"),
-               "setup": os.path.join(runtime_dir, "GT_Endurance.import.json")}.get(command)
+               "setup": os.path.join(runtime_dir, setup_name)}.get(command)
         if out:
             extra += ["--out", out]
     # `racecast media` downloads Intro/Outro from YouTube -> it needs the shared
@@ -579,6 +599,9 @@ def _oneshot_extra(command, rest, runtime_dir, base_dir, overlay_css=None):
     if (command == "setup" and overlay_css and "--overlay-css" not in rest
             and os.path.isfile(overlay_css)):
         extra += ["--overlay-css", overlay_css]
+    if (command == "setup" and profile_graphics and "--profile-graphics" not in rest
+            and os.path.isdir(profile_graphics)):
+        extra += ["--profile-graphics", profile_graphics]
     return extra
 
 def _relay_script():
@@ -843,6 +866,17 @@ def _active_overlay_dir():
     root = _env_base(IS_FROZEN, _real_executable(), HERE)
     return os.path.join(pcfg.profiles_dir(root), active, "overlay")
 
+def _active_profile_graphics_dir():
+    """profiles/<active>/graphics for the active profile, or None when no profile
+    resolves. Committed per-profile graphics (e.g. a demo Overlay.png) that
+    setup-assets seeds into the runtime graphics dir as a fallback. (Does not
+    check existence — callers decide.)"""
+    active = _active_profile_name()
+    if not active:
+        return None
+    root = _env_base(IS_FROZEN, _real_executable(), HERE)
+    return os.path.join(pcfg.profiles_dir(root), active, "graphics")
+
 def _overlay_relay_args(overlay_dir):
     """['--overlay-dir', DIR] when DIR exists, else [] (pure for tests)."""
     if overlay_dir and os.path.isdir(overlay_dir):
@@ -858,7 +892,7 @@ def _relay_runtime_args():
             + _overlay_relay_args(_active_overlay_dir()))
 
 RELAY_PORT = 8088
-STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Endurance.json
+STANDBY_SCENE = "Standby"   # canonical scene name in src/obs/GT_Racing_Endurance.json
 
 # The relay-served pages OBS renders as browser sources (panel is tablet-only).
 # The override.css is hashed too, so a per-profile CSS edit advances the
@@ -992,6 +1026,10 @@ def route(argv):
         return {"kind": "ui", "rest": rest}
     if cmd == "freeport":
         return {"kind": "freeport", "rest": rest}
+    if cmd == "device-scan":
+        return {"kind": "device-scan", "rest": rest}
+    if cmd == "gt7-discover":
+        return {"kind": "gt7-discover", "rest": rest}
     if cmd == "init":
         return {"kind": "init", "rest": rest}
     if cmd == "profile":
@@ -1057,14 +1095,20 @@ def profile_cmd(rest):
         return None
     if verb == "new":
         try:
-            target = pa.create_profile(root, opts["name"], opts["source"])
+            target = pa.create_profile(root, opts["name"], opts["source"],
+                                       kind=opts["kind"], template=opts["template"])
         except ValueError as e:
             sys.exit(f"racecast: {e}")
         slug = os.path.basename(target)        # typed name -> directory slug
         env_path = os.path.join(target, pcfg.PROFILE_ENV_NAME)
-        print(f"created profile '{slug}' at {target}")
-        print(f"  edit {env_path} (fill in SHEET_ID), then: "
-              f"racecast profile use {slug}")
+        if opts["kind"] == "solo":
+            print(f"created solo profile '{slug}' "
+                  f"(template: {opts['template']}) at {target}")
+            print(f"  edit {env_path}, then: racecast profile use {slug}")
+        else:
+            print(f"created profile '{slug}' at {target}")
+            print(f"  edit {env_path} (fill in SHEET_ID), then: "
+                  f"racecast profile use {slug}")
         return None
     if verb == "export":
         res = profile_export_data(opts["name"],
@@ -2118,6 +2162,51 @@ def _relay_fetch_json(url, timeout=3):
     return http_util.get_json(url, timeout=timeout)
 
 
+def _relay_telemetry_source():
+    """The running relay's GET /telemetry/data payload (a dict) so the caller can read
+    its latched-console `source` field. None on any failure (no relay, telemetry
+    disabled -> 404, timeout, non-dict body)."""
+    try:
+        data = http_util.get_json(
+            f"http://127.0.0.1:{RELAY_PORT}/telemetry/data", timeout=2)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _discover_consoles(**kwargs):
+    # Lazy peer import (see build-binary.py hidden-imports). Guard it so a broken/
+    # partial install degrades to an empty result instead of crashing resolve_console's
+    # never-raise contract (the CLI has no outer wrapper; the CC endpoint does).
+    try:
+        import gt7_discovery
+    except ImportError as exc:
+        return {"consoles": [], "note": f"discovery unavailable: {exc}"}
+    return gt7_discovery.discover_consoles(**kwargs)
+
+
+def resolve_console(timeout=4.0, *, discover=None, relay_get=None):
+    """Resolve GT7 console IP(s) two ways: prefer a running relay's already-latched
+    console (no second 33740 bind, instant); else broadcast-scan the LAN. Returns
+    {consoles, note, from_relay}. Never raises.
+
+    Note: tier-1 (from_relay) returns whatever the relay latched, and the relay latches
+    the first responder BEFORE decrypting (racecast-feeds.py _telemetry_loop), so on a
+    noisy LAN it can be a non-GT7 host; the tier-2 scanner is decrypt-gated. Same LAN
+    trust boundary either way (spec non-goal)."""
+    relay_get = relay_get or _relay_telemetry_source
+    relayed = relay_get()
+    src = relayed.get("source") if isinstance(relayed, dict) else None
+    if src:
+        return {"consoles": [src], "note": "", "from_relay": True}
+    discover = discover or _discover_consoles
+    res = discover(timeout=timeout)
+    return {"consoles": res.get("consoles", []), "note": res.get("note", ""),
+            "from_relay": False}
+
+
 def _active_console_secret():
     """The active league's CONSOLE_SECRET from the resolved profile env ('' if unset).
     Same league = same secret (it travels with `profile export`), so producer B already
@@ -2347,42 +2436,48 @@ def _obs_pages_hash_path():
 
 
 def _sync_pov_transform(set_transform=None):
-    """Best-effort live sibling of the setup-time POV bake: push the active
-    profile's POV-box position/size onto the OBS 'Feed POV' scene item. Reads the
-    profile override CSS, merges over the hud.html base (so an override of only
-    some props keeps the rest at the base), and calls SetSceneItemTransform.
-    Silent on any miss — OBS unreachable, no overlay, item absent. `set_transform`
-    is a test seam (defaults to obs_ws.set_scene_item_transform)."""
+    """Best-effort live sibling of the setup-time POV/webcam bake: push every
+    mapped overlay slot's box position/size onto its OBS scene item (see
+    overlay_build.OVERLAY_SLOT_OBS_SOURCES — 'pov' -> Stint/'Feed POV', 'webcam'
+    -> Program/'Solo Webcam'). Reads the hud.html base and the profile override
+    CSS ONCE, then loops the slots, merging override over base per slot (so an
+    override of only some props keeps the rest at the base) and calling
+    SetSceneItemTransform. Silent per-slot on any miss — OBS unreachable, no
+    overlay, no base rule for that slot, missing scene/source (e.g. no 'Solo
+    Webcam' in an endurance collection). `set_transform` is a test seam
+    (defaults to obs_ws.set_scene_item_transform)."""
     import overlay_build
     try:
         with open(os.path.join(HERE, "obs", "hud.html"), encoding="utf-8") as fh:
-            base = overlay_build.pov_box_from_css(overlay_build.base_style(fh.read()))
+            base_style = overlay_build.base_style(fh.read())
     except OSError:
         return
-    if not base:                       # base page lost its #pov rule -> nothing to anchor
-        return
-    overrides = {}
+    override_css = ""
     od = _active_overlay_dir()
     css = os.path.join(od, "hud.css") if od else None
     if css and os.path.isfile(css):
         try:
             with open(css, encoding="utf-8") as fh:
-                overrides = overlay_build.pov_box_from_css(fh.read())
+                override_css = fh.read()
         except OSError:
-            overrides = {}
+            override_css = ""
     try:
         import obs_ws
-        box = {**base, **overrides}
-        source = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
         if set_transform is None:
             set_transform = obs_ws.set_scene_item_transform
-        transform = obs_ws.pov_scene_item_transform(box)
-        ok, note = set_transform(obs_ws.STINT_SCENE, source, transform)
-        if ok:
-            print(f"obs: POV box synced to '{source}' "
-                  f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
+        for slot_id, tgt in overlay_build.OVERLAY_SLOT_OBS_SOURCES.items():
+            base = overlay_build.box_from_css(base_style, slot_id)
+            if not base:                # base page lost this slot's rule -> nothing to anchor
+                continue
+            overrides = overlay_build.box_from_css(override_css, slot_id)
+            box = {**base, **overrides}
+            transform = obs_ws.pov_scene_item_transform(box)
+            ok, note = set_transform(tgt["scene"], tgt["source"], transform)
+            if ok:
+                print(f"obs: {slot_id} box synced to '{tgt['source']}' "
+                      f"({box['left']},{box['top']} {box['width']}x{box['height']}).")
     except Exception as exc:  # noqa: BLE001 — best-effort contract
-        print(f"obs: POV box sync skipped ({exc}).")
+        print(f"obs: box sync skipped ({exc}).")
         return
 
 
@@ -2491,7 +2586,7 @@ def obs_refresh_cmd(_rest):
 
 def obs_collection_cmd(rest):
     """`racecast obs collection` reports the active OBS scene collection; add `set` to
-    switch OBS to the GT Endurance Racing collection. Best effort — OBS must be running
+    switch OBS to the GT Racing Endurance collection. Best effort — OBS must be running
     with obs-websocket reachable. A mismatch exits non-zero so scripts/CI notice;
     `set` exits non-zero on failure so the Control Center job shows red."""
     import obs_ws
@@ -2588,6 +2683,229 @@ def obs_stream_target_cmd(rest):
     if not ok:
         sys.exit(f"obs: stream target not set — {note}")
     print(f"obs: {note} ✓")
+
+
+def resolve_device_selection(devices, token):
+    """Map a user token to a device value. token: "" -> (None,None) (skip/leave);
+    a 1-based index; a case-insensitive name substring; or an exact value. Returns
+    (value, None) or (None, error)."""
+    token = (token or "").strip()
+    if not token:
+        return None, None
+    if token.isdigit():
+        i = int(token)
+        if 1 <= i <= len(devices):
+            return devices[i - 1]["value"], None
+        return None, f"index {i} out of range (1..{len(devices)})"
+    for d in devices:                                   # exact value first
+        if d["value"] == token:
+            return d["value"], None
+    matches = [d for d in devices if token.lower() in d.get("name", "").lower()]
+    if len(matches) == 1:
+        return matches[0]["value"], None
+    if not matches:
+        return None, f"no device matches {token!r}"
+    return None, f"{token!r} is ambiguous ({len(matches)} matches)"
+
+
+def _parse_device_scan_args(rest):
+    """(webcam_token_or_None, capture_token_or_None, mic_token_or_None,
+    tyres_token_or_None). Only --webcam/--capture/--mic/--tyres are recognized;
+    anything else is a usage error."""
+    webcam = None
+    capture = None
+    mic = None
+    tyres = None
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if arg == "--webcam" and i + 1 < len(rest):
+            webcam = rest[i + 1]
+            i += 2
+        elif arg == "--capture" and i + 1 < len(rest):
+            capture = rest[i + 1]
+            i += 2
+        elif arg == "--mic" and i + 1 < len(rest):
+            mic = rest[i + 1]
+            i += 2
+        elif arg == "--tyres" and i + 1 < len(rest):
+            tyres = rest[i + 1]
+            i += 2
+        else:
+            raise ValueError(
+                "usage: racecast device-scan [--webcam VAL] [--capture VAL] "
+                "[--mic VAL] [--tyres VAL]")
+    return webcam, capture, mic, tyres
+
+
+def device_scan_cmd(rest):
+    """`racecast device-scan [--webcam VAL] [--capture VAL] [--mic VAL] [--tyres VAL]`
+    — enumerate the OBS video-capture devices and microphones available to this
+    machine (via a throwaway-scene OBS probe, no collection needs importing), then
+    write the operator's picks to the machine .env as RACECAST_WEBCAM/RACECAST_CAPTURE/
+    RACECAST_MIC/RACECAST_TYRES_CAPTURE (#304, mic added in #307, tyres added in the
+    solo Commentary HUD plan). VAL is a 1-based list index (into its own list — video
+    indices for --webcam/--capture/--tyres, mic indices for --mic), a case-insensitive
+    name substring, or an exact device value; blank/omitted leaves that slot untouched.
+    --tyres resolves against the SAME enumerated video device list as --webcam/--capture
+    (it is a second video-capture card, not a distinct enumerated input). Without flags
+    and on a TTY it prompts interactively; headless it just lists the devices and hints
+    at the flags (never blocks on input())."""
+    import obs_ws
+    try:
+        webcam_tok, capture_tok, mic_tok, tyres_tok = _parse_device_scan_args(rest)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    res = obs_ws.probe_device_options()
+    devices, note = res["devices"], res["note"]
+    mics, mic_note = res["mic"], res["mic_note"]
+    if not devices and not mics:
+        sys.exit(f"device-scan: {note or mic_note or 'no devices found'} — "
+                 "start OBS with obs-websocket enabled, then retry.")
+    if devices:
+        print("Available video devices:")
+        for i, d in enumerate(devices, start=1):
+            print(f"  {i}. {d['name']}")
+    if mics:
+        print("Available microphones:")
+        for i, d in enumerate(mics, start=1):
+            print(f"  {i}. {d['name']}")
+    if webcam_tok is None and capture_tok is None and mic_tok is None and tyres_tok is None:
+        if not sys.stdin.isatty():
+            print("racecast: pass --webcam VAL, --capture VAL, --mic VAL, and/or "
+                 "--tyres VAL to select one (non-interactive session).")
+            return None
+        webcam_tok = input("Webcam [index/name, blank=skip]: ")
+        capture_tok = input("Capture [index/name, blank=skip]: ")
+        mic_tok = input("Mic [index/name, blank=skip]: ")
+        tyres_tok = input("Tyres capture [index/name, blank=skip]: ")
+    errors = []
+    webcam_val, werr = resolve_device_selection(devices, webcam_tok or "")
+    if werr:
+        errors.append(f"webcam — {werr}")
+    capture_val, cerr = resolve_device_selection(devices, capture_tok or "")
+    if cerr:
+        errors.append(f"capture — {cerr}")
+    mic_val, mierr = resolve_device_selection(mics, mic_tok or "")
+    if mierr:
+        errors.append(f"mic — {mierr}")
+    tyres_val, terr = resolve_device_selection(devices, tyres_tok or "")
+    if terr:
+        errors.append(f"tyres — {terr}")
+    if errors:
+        sys.exit("device-scan: " + "; ".join(errors))
+    updates = {}
+    if webcam_val is not None:
+        updates["RACECAST_WEBCAM"] = webcam_val
+    if capture_val is not None:
+        updates["RACECAST_CAPTURE"] = capture_val
+    if mic_val is not None:
+        updates["RACECAST_MIC"] = mic_val
+    if tyres_val is not None:
+        updates["RACECAST_TYRES_CAPTURE"] = tyres_val
+    if not updates:
+        print("device-scan: nothing to write (no selection made).")
+        return None
+    res = env_upsert_data(updates)
+    if not res.get("ok"):
+        sys.exit(f"device-scan: {res.get('error')}")
+    print(f"device-scan: wrote {', '.join(sorted(updates))} to .env.")
+    print("Re-run `racecast setup` to bake these into the OBS collection.")
+    return None
+
+
+_PS_HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}\Z")   # mirrors ui_ops._HOST_RE
+
+
+def ps_ip_write_data(ip, path=None):
+    """Validate + upsert the PS4/PS5 IP into the machine .env as
+    RACECAST_GT7_PS_IP. `path` is a test seam (mirrors env_upsert_data's)."""
+    ip = (ip or "").strip()
+    if not _PS_HOST_RE.match(ip):
+        return {"ok": False, "error": f"invalid host/IP: {ip!r}"}
+    return env_upsert_data({"RACECAST_GT7_PS_IP": ip}, path=path)
+
+
+def _parse_gt7_discover_args(rest):
+    """Return (save, print_only, timeout, pick). Raises ValueError on bad input."""
+    usage = ("usage: racecast gt7-discover [--save] [--print] "
+             "[--timeout N] [--pick INDEX]")
+    save = print_only = False
+    timeout = 4.0
+    pick = None
+    it = iter(rest)
+    for tok in it:
+        if tok == "--save":
+            save = True
+        elif tok == "--print":
+            print_only = True
+        elif tok == "--timeout":
+            try:
+                timeout = float(next(it))
+            except (StopIteration, ValueError):
+                raise ValueError(f"--timeout needs a number. {usage}") from None
+        elif tok == "--pick":
+            try:
+                pick = next(it)
+            except StopIteration:
+                raise ValueError(f"--pick needs an index. {usage}") from None
+        else:
+            raise ValueError(f"unknown flag {tok!r}. {usage}")
+    return save, print_only, timeout, pick
+
+
+def gt7_discover_cmd(rest):
+    """`racecast gt7-discover [--save] [--print] [--timeout N] [--pick I]` — find the
+    PS4/PS5 running GT7 on the LAN (reuses a running relay's latched console when up,
+    else a broadcast scan) and write its IP to RACECAST_GT7_PS_IP. --save skips the
+    prompt (for non-TTY); --print never writes; --pick selects when several are found."""
+    try:
+        save, print_only, timeout, pick = _parse_gt7_discover_args(rest)
+    except ValueError as exc:
+        sys.exit(str(exc))
+    res = resolve_console(timeout=timeout)
+    consoles, note = res["consoles"], res["note"]
+    if res["from_relay"]:
+        print(f"Using console latched by the running relay: {consoles[0]}")
+    if not consoles:
+        print(f"gt7-discover: {note}")
+        return None
+    if len(consoles) == 1:
+        chosen = consoles[0]
+        print(f"Found PlayStation: {chosen}")
+    else:
+        print("Found PlayStations:")
+        for i, ip in enumerate(consoles, start=1):
+            print(f"  {i}. {ip}")
+        if pick is None:
+            if not sys.stdin.isatty():
+                print("gt7-discover: pass --pick INDEX to choose one "
+                      "(non-interactive session).")
+                return None
+            pick = input(f"Pick [1-{len(consoles)}, blank=cancel]: ").strip()
+        if not pick:
+            print("gt7-discover: cancelled.")
+            return None
+        try:
+            chosen = consoles[int(pick) - 1]
+        except (ValueError, IndexError):
+            sys.exit(f"gt7-discover: invalid selection {pick!r}.")
+    if print_only:
+        return None
+    if not save and sys.stdin.isatty():
+        ans = input(f"Save {chosen} to RACECAST_GT7_PS_IP? [Y/n]: ").strip().lower()
+        if ans in ("n", "no"):
+            print("gt7-discover: not saved.")
+            return None
+    elif not save:
+        print(f"gt7-discover: found {chosen} (pass --save to write it to .env).")
+        return None
+    out = ps_ip_write_data(chosen)
+    if not out.get("ok"):
+        sys.exit(f"gt7-discover: {out.get('error')}")
+    print(f"gt7-discover: wrote RACECAST_GT7_PS_IP={chosen} to .env.")
+    print("Restart the relay (`racecast relay restart`) to apply.")
+    return None
 
 
 def _active_sheet_url():
@@ -3881,7 +4199,8 @@ def _oneshot_code(command, rest):
         rest = _cookies_oneshot_args(rest)
     _od = _active_overlay_dir()
     extra = _oneshot_extra(command, rest, _runtime_dir(), _runtime_base_dir(),
-                           overlay_css=os.path.join(_od, "hud.css") if _od else None)
+                           overlay_css=os.path.join(_od, "hud.css") if _od else None,
+                           profile_graphics=_active_profile_graphics_dir())
     if command == "update" and "--current" not in rest:
         extra += ["--current", version()]
     return _run_script(ONESHOT_MAP[command], list(rest) + extra)
@@ -4155,8 +4474,8 @@ def profile_logo():
 def profiles_data():
     """Control Center profile switcher data: the effective active profile plus
     every available profile with its display NAME and whether SHEET_ID is set.
-    {ok, active, logo, profiles:[{name, display, sheet_set}]} or {ok:false, error}.
-    Never raises."""
+    {ok, active, logo, profiles:[{name, display, sheet_set, kind}]} or
+    {ok:false, error}. Never raises."""
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
         runtime_root = _runtime_base_dir()
@@ -4167,11 +4486,13 @@ def profiles_data():
             try:
                 rc = pcfg.resolve_config(root, override=n, runtime_root=runtime_root)
                 out.append({"name": n, "display": rc.name,
-                            "sheet_set": bool(rc.sheet_id)})
+                            "sheet_set": bool(rc.sheet_id),
+                            "kind": rc.kind})
                 if n == active:
                     logo = bool(servable_logo_path(rc.logo_path))
             except pcfg.ProfileError:
-                out.append({"name": n, "display": n, "sheet_set": False})
+                out.append({"name": n, "display": n, "sheet_set": False,
+                            "kind": pcfg.DEFAULT_KIND})
         return {"ok": True, "active": active, "logo": logo, "profiles": out}
     except Exception as exc:
         return {"ok": False, "error": f"could not read profiles: {exc}"}
@@ -4191,12 +4512,16 @@ def profile_use_data(name, set_active=None):
         return {"ok": False, "error": f"could not switch profile: {exc}"}
 
 
-def profile_new_data(name, source="example", create=None):
-    """Create a new profile by copying `source` (default the example template).
-    Does NOT switch to it. {ok, name, path} or {ok:false, error}. `create` seam."""
+def profile_new_data(name, source="example", create=None, kind=None,
+                     template=None):
+    """Create a new profile by copying `source` (endurance) or generating a
+    solo profile.env (kind="solo"). Does NOT switch to it.
+    {ok, name, path} or {ok:false, error}. `create` seam."""
     try:
         root = _env_base(IS_FROZEN, _real_executable(), HERE)
-        target = (create or pa.create_profile)(root, name, source or "example")
+        target = (create or pa.create_profile)(
+            root, name, source or "example",
+            kind=kind or pcfg.DEFAULT_KIND, template=template)
         # return the directory slug (what `profile use` / the active pointer need),
         # which may differ from a typed display name like "Demo League" -> "demo-league".
         return {"ok": True, "name": os.path.basename(target), "path": target}
@@ -4506,6 +4831,74 @@ def env_write_data(entries, path=None):
         return {"ok": False, "error": (f"machine .env keys must start with "
                                        f"{MACHINE_ENV_PREFIX}: {foreign[0]!r} is not allowed")}
     return _write_env_file(path or _env_file(), entries)
+
+
+def env_upsert_data(updates, path=None):
+    """Set each key in `updates` (dict) in the machine .env WITHOUT dropping any other
+    key. env_write_data treats its entries as the COMPLETE set (unlisted real keys are
+    removed), so read the current entries, overlay `updates`, and write the union.
+    {ok,path} or {ok:false,error}. Never raises beyond the underlying helpers' contract."""
+    target = path or _env_file()
+    read = env_entries_data(path=target)          # {ok, path, entries:[{key,value}]}
+    if not read.get("ok"):
+        return read
+    merged = {e["key"]: e["value"] for e in read["entries"]}
+    merged.update({k: str(v) for k, v in updates.items()})
+    entries = [{"key": k, "value": v} for k, v in merged.items()]
+    res = env_write_data(entries, path=target)
+    if not res.get("ok") and "must start with" in (res.get("error") or ""):
+        return {"ok": False, "error": (
+            "the machine .env contains a non-RACECAST_ key, so the device selection "
+            "could not be saved (nothing was written); the machine .env must hold only "
+            f"RACECAST_* keys — fix it in the .env editor, then retry. [{res['error']}]")}
+    return res
+
+
+def devices_enumerate_data():
+    """Control Center General-Settings data: the OBS video-capture devices
+    (webcam/capture share one device list) and microphones (#307), each
+    enumerated by a throwaway-scene OBS probe (no collection needs importing).
+    {ok, devices:[{name,value}], note, mic:[{name,value}], mic_note}. ok reflects
+    the video enumeration only (webcam/capture, unchanged contract); mic_note
+    explains a failed/empty mic list independently — the front-end disables each
+    dropdown on its own signal. Never raises (obs_ws.probe_device_options is
+    best-effort)."""
+    import obs_ws
+    res = obs_ws.probe_device_options()
+    return {"ok": not res["note"],
+            "devices": [{"name": d["name"], "value": d["value"]} for d in res["devices"]],
+            "note": res["note"],
+            "mic": [{"name": d["name"], "value": d["value"]} for d in res["mic"]],
+            "mic_note": res["mic_note"]}
+
+
+def ps_discover_data():
+    """Control Center General-Settings data: discover the PS4/PS5 running GT7 on the
+    LAN (a running relay's latched console, else a broadcast scan). Never raises."""
+    res = resolve_console()
+    return {"ok": bool(res["consoles"]), "consoles": res["consoles"],
+            "note": res["note"], "from_relay": res["from_relay"]}
+
+
+def devices_write_data(webcam, capture, mic=None, tyres=None, path=None):
+    """Upsert the chosen webcam/capture/mic/tyres device ids into the machine .env
+    (RACECAST_WEBCAM/RACECAST_CAPTURE/RACECAST_MIC/RACECAST_TYRES_CAPTURE; mic added
+    #307, tyres/fuel second-capture added in the commentary-HUD work). A blank/None
+    value leaves that key unchanged; all blank -> {ok:false, error} (nothing to
+    save). `path` is a test seam (mirrors env_upsert_data's), unused in production
+    (resolves the real machine .env)."""
+    updates = {}
+    if (webcam or "").strip():
+        updates["RACECAST_WEBCAM"] = webcam.strip()
+    if (capture or "").strip():
+        updates["RACECAST_CAPTURE"] = capture.strip()
+    if (mic or "").strip():
+        updates["RACECAST_MIC"] = mic.strip()
+    if (tyres or "").strip():
+        updates["RACECAST_TYRES_CAPTURE"] = tyres.strip()
+    if not updates:
+        return {"ok": False, "error": "no device selected"}
+    return env_upsert_data(updates, path=path)
 
 
 def _active_profile_env_strict():
@@ -5970,7 +6363,7 @@ def _mtime(path):
         return None
 
 def _init_import_json():
-    return os.path.join(_runtime_dir(), "GT_Endurance.import.json")
+    return os.path.join(_runtime_dir(), _setup_import_name())
 
 def _init_companion_cfg():
     return os.path.join(_runtime_dir(), "racecast-buttons.companionconfig")
@@ -6015,7 +6408,7 @@ def _init_steps(opts):
         "setup": {"done": lambda: ins.setup_done(
                       _mtime(_init_import_json()),
                       [_mtime(_active_profile_env_path())] if IS_FROZEN else
-                      [_mtime(resource_path("obs/GT_Endurance.json")),
+                      [_mtime(resource_path("obs/GT_Racing_Endurance.json")),
                        _mtime(_active_profile_env_path())]),
                   "run": lambda: _oneshot_code("setup",
                                                ["--out", _init_import_json()])},
@@ -6226,6 +6619,10 @@ def run_ui(rest, fail=sys.exit, open_browser=True):
         "speedtest": speedtest_data,
         "env_read": env_entries_data,
         "env_write": env_write_data,
+        "devices_enumerate": devices_enumerate_data,
+        "devices_write": devices_write_data,
+        "ps_discover": ps_discover_data,
+        "ps_write": ps_ip_write_data,
         "profiles": profiles_data,
         "profile_logo": profile_logo,
         "profile_use": profile_use_data,
@@ -6365,6 +6762,10 @@ def main(argv=None):
         return ui_cmd(action["rest"])
     if action["kind"] == "freeport":
         return freeport_cmd(action["rest"])
+    if action["kind"] == "device-scan":
+        return device_scan_cmd(action["rest"])
+    if action["kind"] == "gt7-discover":
+        return gt7_discover_cmd(action["rest"])
     if action["kind"] == "init":
         return init_cmd(action["rest"])
     if action["kind"] == "profile":

@@ -70,7 +70,7 @@ DISCORD_WEBHOOK_URL=
 - **`OBS_COLLECTION`** *(optional)* — the OBS scene-collection name this league uses, so
   several leagues can keep separate collections in OBS on one machine. `racecast setup`
   writes this name into the import JSON; blank = the per-league convention
-  `GT Endurance Racing — <league>`.
+  `GT Racing Endurance — <league>`.
 - **`CONSOLE_SECRET`** *(auto-managed — do not set by hand)* — the per-league HMAC secret
   that signs the `/console` identity tokens (commentator/director/producer) and acts as the
   step-up secret for irreversible producer ops. It is **generated automatically** on the
@@ -149,7 +149,7 @@ tokens instead of real paths and URLs. `setup-assets.py` injects the real values
 `runtime/<profile>/`, named after the profile's `OBS_COLLECTION`):
 
 ```bash
-racecast setup --out runtime/GT_Endurance.import.json
+racecast setup --out runtime/GT_Racing_Endurance.import.json
 ```
 
 The tokens in the collection:

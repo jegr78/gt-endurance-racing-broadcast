@@ -27,7 +27,7 @@
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>GT Endurance Racing · Director Console</title>
+<title>GT Racing · Director Console</title>
 <!-- Inline "D" favicon (drawn as a path, so it renders without a font); dark tile + live-green letter to match the console theme. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c0f'/%3E%3Cpath fill-rule='evenodd' d='M8 6h9a10 10 0 0 1 0 20H8zM13 11h4a5 5 0 0 1 0 10h-4z' fill='%232bd66a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,7 +35,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   /* =========================================================
-     GT ENDURANCE RACING DIRECTOR CONSOLE — vision-mixer busses
+     GT RACING DIRECTOR CONSOLE — vision-mixer busses
      Horizontal action rows mirroring the Companion pages.
      Dark, high-contrast, glanceable. Built for tablet + desktop.
      ========================================================= */
@@ -509,6 +509,21 @@
   .partinput { width: 100%; padding: 8px; font: 700 15px monospace; letter-spacing: .5px;
     background: #0d0f14; color: #e8eaed; border: 1px solid #3a3f4a; border-radius: 6px; }
   #partModalConfirm:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Kind-conditional cut (#307): hide A/B feed + schedule + submission surfaces
+     in solo; reveal the POV editor (which lives inside #urlsBox) as its own card.
+     Endurance = no `.solo` class → byte-identical. */
+  body.solo #feedsSec,
+  body.solo #stA,
+  body.solo #stB,
+  body.solo #stAir,
+  body.solo .pvtile[data-feed="A"],
+  body.solo .pvtile[data-feed="B"],
+  body.solo #urlsBox > summary,
+  body.solo #raceSched,
+  body.solo #qualSched,
+  body.solo #modeSwitch,
+  body.solo #subsBox { display: none !important; }
 </style>
 </head>
 <body>
@@ -520,7 +535,7 @@
            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       Console
     </a>
-    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT ENDURANCE RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
+    <div class="brand">Director Console<small id="brandSub"><span id="brandSubText">GT RACING BROADCAST</span><button id="brandSubEdit" class="brand-edit" title="Edit the event title">✎</button><input id="brandSubInput" maxlength="120" placeholder="Event title (e.g. GTEC - 2026 - Round 4 - Nürburgring 24h)" hidden></small></div>
     <div class="strip">
       <span class="st" id="stHealth" title="">HEALTH <b>—</b></span>
       <span class="st air" id="stAir">ON AIR <b>—</b></span>
@@ -614,7 +629,7 @@
 
   <div class="cols">
     <div class="colstack">
-  <section class="bus"><div class="cap">Feeds</div>
+  <section class="bus" id="feedsSec"><div class="cap">Feeds</div>
     <div class="body">
       <div class="keys" id="feedsBus"></div>
       <div class="hint" id="feedHealth"></div>
@@ -775,6 +790,10 @@
       <div class="hint">POV — a full watch URL (<code>youtube.com/watch?v=…</code> or
         <code>twitch.tv/&lt;channel&gt;</code>). The POV URL applies on <b>POV RELOAD</b>.
         Available in both race and qualifying.</div>
+      <!-- Solo-only: POV RELOAD/STOP, kept reachable here since #feedsSec (where
+           these actions normally live) is hidden in solo. Built only under solo
+           (see buildPovActions()) — empty/hidden in endurance. -->
+      <div class="keys" id="povActionsBus" hidden></div>
     </div>
   </details>
 
@@ -850,7 +869,7 @@
 <script>
 /* =======================================================================
    CONFIG — mirrors the Companion button config (src/companion/) and the
-   OBS collection (src/obs/GT_Endurance.json). Edit here if scenes/sources
+   OBS collection (src/obs/GT_Racing_Endurance.json). Edit here if scenes/sources
    are renamed in OBS; keep Companion and this file in sync.
    - macros:   PGM bus, exact Companion page-1 row-0 semantics
    - scenes:   raw scene switches
@@ -932,12 +951,58 @@ const CONFIG = {
   ],
 };
 
+/* CONFIG_SOLO — the solo OBS control set (#307 Increment 2 §A), derived 1:1
+   from the `GT Racing Solo` collection (#303). No A/B feeds, no macros (solo
+   has no feed-swap workflow). Rebuilt onto the busses in place of CONFIG the
+   first time /status reports solo (see applySolo()'s builtSolo latch) — the
+   endurance default build from CONFIG is never affected. */
+const CONFIG_SOLO = {
+  macros: [],
+  scenes: ["Program","Interview","Standby","Intermission","Intro","Outro","Discord"],
+  vis: [
+    {label:"WEBCAM", scene:"Program", source:"Solo Webcam"},
+    {label:"POV",    scene:"Program", source:"Feed POV", relay:"pov"},
+  ],
+  graphics: [
+    {label:"HUD",           scene:"Program",   source:"Stint HUD"},
+    {label:"STANDINGS",     scene:"Program",   source:"Standings"},
+    {label:"SCHEDULE",      scene:"Program",   source:"Schedule"},
+    {label:"RACE RESULTS",  scene:"Program",   source:"Race Results"},
+    {label:"QUALI RESULTS", scene:"Program",   source:"Quali Results"},
+    {label:"RACE WX 1",     scene:"Program",   source:"Race Weather 1"},
+    {label:"RACE WX 2",     scene:"Program",   source:"Race Weather 2"},
+    {label:"QUALI WX",      scene:"Program",   source:"Quali Weather"},
+    {label:"STBY COVER",    scene:"Program",   source:"Standby Cover"},
+    {label:"POST-RACE",     scene:"Interview", source:"Post Race Interviews"},
+  ],
+  audio: [
+    {label:"Game",         input:"Solo Capture Device"},
+    {label:"Webcam",       input:"Solo Webcam Device"},
+    {label:"Mic",          input:"Commentary Mic Device"},
+    {label:"POV",          input:"Feed POV"},
+    {label:"Discord",      input:"Discord Audio Capture"},
+    {label:"Intermission", input:"Intermission Music"},
+  ],
+  // Solo's Standby Cover lives in the Program scene (not a Stint scene), so the
+  // RED FLAG button retargets there. Endurance CONFIG has no redFlag key -> the
+  // hardcoded {Stint, Standby Cover} default stands (byte-identical).
+  redFlag: {scene:"Program", source:"Standby Cover"},
+};
+
 /* Relay endpoints (same origin as this page; Companion uses the same set). */
 const FEED_ACTIONS = [
   ["NEXT",       "next",       "handover"],
   ["RELOAD ALL", "reload",     "relay"],
   ["RELOAD A",   "reload/A",   "relay"],
   ["RELOAD B",   "reload/B",   "relay"],
+  ["POV RELOAD", "pov/reload", "relay"],
+  ["POV STOP",   "pov/stop",   "relay"],
+];
+/* Solo-only duplicate of the two POV entries above (#307): #feedsSec (where
+   FEED_ACTIONS renders, endurance unchanged) is hidden wholesale in solo, so
+   POV RELOAD/STOP are re-rendered into #povActionsBus (next to the POV editor,
+   which stays visible in solo) by buildPovActions() — built only under solo. */
+const POV_ACTIONS = [
   ["POV RELOAD", "pov/reload", "relay"],
   ["POV STOP",   "pov/stop",   "relay"],
 ];
@@ -1007,26 +1072,96 @@ function mkKey(label, tag, onClick){
 const macroKeys = [], sceneKeys = {}, toggleKeys = [];
 let povVisBtn = null;                 // the relay-driven POV visibility button (#130)
 
-CONFIG.macros.forEach(m=>{
-  const b = mkKey(m.label, "program", ()=>runMacro(m));
-  b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
+/* RED FLAG — toggles the Standby Cover via the relay's /obs/source endpoint,
+   using the last-known state from /obs/state. Built once and re-appended to
+   #pgmBus by every buildControls() call (so a solo rebuild never drops it);
+   buildControls retargets redFlagItem from cfg.redFlag when present (solo puts
+   Standby Cover in the Program scene). Endurance keeps this hardcoded default. */
+const redFlagItem = {scene:"Stint", source:"Standby Cover"};
+const redFlagBtn = mkKey("RED FLAG", "alarm", async ()=>{
+  const last = obsState.sources.find(s=>s.scene===redFlagItem.scene && s.source===redFlagItem.source);
+  const on = last ? !last.enabled : true;
+  await obsSource(redFlagItem.scene, redFlagItem.source, on);
+  log("RED FLAG " + (on ? "— cover up" : "over — cover down"));
+  setupSet("racecontrol", on ? "Red Flag - Race Suspended" : "");
+  obsStatePoll();
 });
+redFlagBtn.classList.add("redflag");
+redFlagBtn._item = redFlagItem;
 
-/* RED FLAG — toggles the Standby Cover in the Stint scene via the relay's
-   /obs/source endpoint, using the last-known state from /obs/state. */
-{
-  const item = {scene:"Stint", source:"Standby Cover"};
-  const b = mkKey("RED FLAG", "alarm", async ()=>{
-    const last = obsState.sources.find(s=>s.scene===item.scene && s.source===item.source);
-    const on = last ? !last.enabled : true;
-    await obsSource(item.scene, item.source, on);
-    log("RED FLAG " + (on ? "— cover up" : "over — cover down"));
-    setupSet("racecontrol", on ? "Red Flag - Race Suspended" : "");
-    obsStatePoll();
+/* Builds the Scn·Vis (#scnBus) / Gfx (#gfxBus) / Audio (#audio) busses, plus
+   the Program-bus (#pgmBus) macros, from cfg. Clears each target bus first
+   (.replaceChildren()) and resets the module-level arrays it populates so a
+   rebuild never duplicates buttons. Called once at load with CONFIG — same
+   DOM/order/handlers as before #307 extracted this into a function — and
+   again, once, with CONFIG_SOLO the first time /status reports a solo relay
+   (see applySolo()'s builtSolo latch). Endurance never triggers the second
+   call, so its build stays byte-identical. */
+let activeConfig = CONFIG;   // the cfg buildControls last ran with; obsStatePoll
+                             // reads it (not CONFIG) so the solo mixer/macros sync.
+function buildControls(cfg){
+  activeConfig = cfg;
+  $("#pgmBus").replaceChildren();
+  $("#scnBus").replaceChildren();
+  $("#scnVisBus").replaceChildren();
+  $("#gfxBus").replaceChildren();
+  $("#audio").replaceChildren();
+  macroKeys.length = 0;
+  toggleKeys.length = 0;
+  Object.keys(sceneKeys).forEach(k=>delete sceneKeys[k]);
+  povVisBtn = null;
+
+  cfg.macros.forEach(m=>{
+    const b = mkKey(m.label, "program", ()=>runMacro(m));
+    b._m = m; macroKeys.push(b); $("#pgmBus").appendChild(b);
   });
-  b.classList.add("redflag");
-  b._item = item; toggleKeys.push(b); $("#pgmBus").appendChild(b);
+  if (cfg.redFlag){ redFlagItem.scene = cfg.redFlag.scene; redFlagItem.source = cfg.redFlag.source; }
+  toggleKeys.push(redFlagBtn);
+  $("#pgmBus").appendChild(redFlagBtn);
+
+  cfg.scenes.forEach(name=>{
+    const b = mkKey(name.toUpperCase(), "scene",
+      ()=>obsScene(name));
+    sceneKeys[name] = b; $("#scnBus").appendChild(b);
+  });
+  cfg.vis.forEach(item=>{
+    const b = mkKey(item.label, item.scene,
+                    ()=> item.relay ? relayCall("pov/toggle") : toggleSource(item, b));
+    b._item = item; toggleKeys.push(b); $("#scnVisBus").appendChild(b);
+    if (item.relay === "pov") povVisBtn = b;
+  });
+
+  cfg.graphics.forEach(item=>{
+    const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
+    b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
+  });
+
+  cfg.audio.forEach(a=>{
+    const row = document.createElement("div"); row.className = "arow";
+    row.innerHTML =
+      `<span class="nm">${a.label}</span>
+       <input type="range" min="-60" max="26" step="0.5" value="0" data-input="${a.input}">
+       <span class="db">— dB</span>
+       <button class="rst">0 dB</button>
+       <button class="mute" data-input="${a.input}">Mute</button>`;
+    $("#audio").appendChild(row);
+    const sld = row.querySelector("input"), db = row.querySelector(".db");
+    sld.addEventListener("input", e=>{
+      sld.dataset.touched = Date.now();
+      db.textContent = Number(e.target.value).toFixed(1) + " dB";
+      obsVol(a.input, Number(e.target.value));
+    });
+    row.querySelector(".rst").addEventListener("click", async ()=>{
+      await obsVol(a.input, 0); obsStatePoll();
+    });
+    row.querySelector(".mute").addEventListener("click", async ()=>{
+      const last = obsState.audio.find(x=>x.input===a.input);
+      const muted = last ? !last.muted : true;
+      await obsMute(a.input, muted); obsStatePoll();
+    });
+  });
 }
+buildControls(CONFIG);
 
 FEED_ACTIONS.forEach(([label, path, tag])=>{
   const b = mkKey(label, tag, ()=>{
@@ -1066,22 +1201,20 @@ async function resyncTo(n){
   }, false));
 });
 
-CONFIG.scenes.forEach(name=>{
-  const b = mkKey(name.toUpperCase(), "scene",
-    ()=>obsScene(name));
-  sceneKeys[name] = b; $("#scnBus").appendChild(b);
-});
-CONFIG.vis.forEach(item=>{
-  const b = mkKey(item.label, item.scene,
-                  ()=> item.relay ? relayCall("pov/toggle") : toggleSource(item, b));
-  b._item = item; toggleKeys.push(b); $("#scnVisBus").appendChild(b);
-  if (item.relay === "pov") povVisBtn = b;
-});
-
-CONFIG.graphics.forEach(item=>{
-  const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
-  b._item = item; toggleKeys.push(b); $("#gfxBus").appendChild(b);
-});
+/* Solo-only: mirror POV RELOAD/STOP next to the POV editor (#povActionsBus,
+   inside #urlsBox) since #feedsSec — where these normally render, unchanged,
+   via FEED_ACTIONS above — is hidden wholesale in solo. Built (and un-hidden)
+   only from applySolo()'s solo latch; never called for endurance, so
+   #povActionsBus stays empty/hidden there — no visible change. */
+function buildPovActions(){
+  const bus = $("#povActionsBus");
+  if (!bus || bus.dataset.built) return;
+  bus.dataset.built = "1";
+  POV_ACTIONS.forEach(([label, path, tag])=>{
+    bus.appendChild(mkKey(label, tag, ()=>relayCall(path)));
+  });
+  bus.hidden = false;
+}
 
 CONFIG.graphicsPreRace.forEach(item=>{
   const b = mkKey(item.label, item.scene, ()=>toggleSource(item, b));
@@ -1136,31 +1269,6 @@ $("#timerBus").appendChild(mkKey("SET…", "duration", ()=>{
   const v = prompt("Race duration (H:MM:SS):", "6:00:00");
   if (v) timerCall("timer/set/" + v.trim());   // ':' is path-safe; encoding it would 400
 }, false));
-
-CONFIG.audio.forEach(a=>{
-  const row = document.createElement("div"); row.className = "arow";
-  row.innerHTML =
-    `<span class="nm">${a.label}</span>
-     <input type="range" min="-60" max="26" step="0.5" value="0" data-input="${a.input}">
-     <span class="db">— dB</span>
-     <button class="rst">0 dB</button>
-     <button class="mute" data-input="${a.input}">Mute</button>`;
-  $("#audio").appendChild(row);
-  const sld = row.querySelector("input"), db = row.querySelector(".db");
-  sld.addEventListener("input", e=>{
-    sld.dataset.touched = Date.now();
-    db.textContent = Number(e.target.value).toFixed(1) + " dB";
-    obsVol(a.input, Number(e.target.value));
-  });
-  row.querySelector(".rst").addEventListener("click", async ()=>{
-    await obsVol(a.input, 0); obsStatePoll();
-  });
-  row.querySelector(".mute").addEventListener("click", async ()=>{
-    const last = obsState.audio.find(x=>x.input===a.input);
-    const muted = last ? !last.muted : true;
-    await obsMute(a.input, muted); obsStatePoll();
-  });
-});
 
 /* ---------- OBS helpers (relay-mediated; no browser→OBS-WS) ---------- */
 async function obsPost(path, body){
@@ -1356,7 +1464,7 @@ async function relayCall(path){
     const d = await r.json();
     if (d.error) { log("Relay /" + path + ": " + d.error, "err"); toast("Relay /" + path + ": " + d.error); return; }
     let extra = "";
-    if (d.feeds) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
+    if (d.feeds && d.feeds.A) extra = ` — A: stint ${d.feeds.A.stint}, B: stint ${d.feeds.B.stint}`;
     log("Relay /" + path + " ok" + extra);
     relayPoll();
   }catch(e){ log("Relay /" + path + " failed (relay reachable?): " + e, "err"); toast("Relay /" + path + " failed — relay unreachable"); }
@@ -1408,11 +1516,11 @@ async function obsStatePoll(){
         sourcesSpec.push({scene: b._item.scene, source: b._item.source});
     }
     // Also include macro show-targets so the PGM bus highlights correctly.
-    for (const m of CONFIG.macros){
+    for (const m of activeConfig.macros){
       for (const [sc, src] of m.show)
         sourcesSpec.push({scene: sc, source: src});
     }
-    const inputsSpec = CONFIG.audio.map(a => a.input);
+    const inputsSpec = activeConfig.audio.map(a => a.input);
 
     const d = await obsPost("state", {sources: sourcesSpec, inputs: inputsSpec});
     if (!d.ok){ obsLed("err"); renderStreamBtn(null); lastStreamActive = null; return; }
@@ -1547,12 +1655,12 @@ function statePill(el, label, stint, n, state, down){
   el.innerHTML = label + " <b>" + stint + "</b>" + (n ? "/" + n : "") + (txt ? " · " + txt : "");
 }
 /* ---------- event title (#207) — header display + inline editor ---------- */
-const BRAND_SUB_STATIC = "GT ENDURANCE RACING BROADCAST";
+const BRAND_SUB_STATIC = "GT RACING BROADCAST";
 let eventTitle = "", editingTitle = false;
 function renderEventTitle(title){
   eventTitle = (title || "").trim();
   document.title = eventTitle ? (eventTitle + " · Director Console")
-                              : "GT Endurance Racing · Director Console";
+                              : "GT Racing · Director Console";
   if (editingTitle) return;                 // don't yank an open editor (mirrors setupPoll)
   $("#brandSubText").textContent = eventTitle || BRAND_SUB_STATIC;   // textContent: XSS-safe
 }
@@ -1591,9 +1699,12 @@ async function relayPoll(){
     const r = await fetch("/status", {cache:"no-store"});
     const d = await r.json();
     relayLed(true); clearBanner("relay");
+    const solo = d.solo === true;         // feed-less solo relay (#302)
+    applySolo(solo);
     renderEventTitle(d.event_title);          // header subtitle + tab title (#207)
     // On-air feed = the lower stint index (mirrors the relay's live_feed()).
-    pvMarkOnAir(d.feeds ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
+    pvMarkOnAir(!solo && d.feeds && d.feeds.A
+      ? (d.feeds.A.index <= d.feeds.B.index ? "A" : "B") : null);
     // Aggregate health pill (relay heartbeat). Version-skew safe: an older relay
     // without d.health shows '—'.
     const HP = {green:["OK","ok"], yellow:["DEGRADED","warn"], red:["CRITICAL","air"]};
@@ -1603,16 +1714,18 @@ async function relayPoll(){
     $("#stHealth").title = (d.health && d.health.reasons && d.health.reasons.length)
       ? d.health.reasons.join(" · ") : "all systems green";
     const n = d.schedule_len;
-    statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
-    statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
-    // #492: ARM/STOP live in each feed row now — show them only in manual-arm mode, and
-    // green-highlight the ARM button of a feed that is currently armed.
-    document.querySelectorAll("#feedQuality .armbtn").forEach(b => {
-      b.style.display = d.manual_feed_arm ? "" : "none";
-      const f = d.feeds[b.dataset.feed];
-      const isArmOn = b.dataset.on === "1";
-      b.classList.toggle("armed", !!d.manual_feed_arm && !!(f && f.armed) && isArmOn);
-    });
+    if (!solo){
+      statePill($("#stA"), "A", "S" + d.feeds.A.stint, n, d.feeds.A.state, d.feeds.A.down);
+      statePill($("#stB"), "B", "S" + d.feeds.B.stint, n, d.feeds.B.state, d.feeds.B.down);
+      // #492: ARM/STOP live in each feed row now — show them only in manual-arm mode, and
+      // green-highlight the ARM button of a feed that is currently armed.
+      document.querySelectorAll("#feedQuality .armbtn").forEach(b => {
+        b.style.display = d.manual_feed_arm ? "" : "none";
+        const f = d.feeds[b.dataset.feed];
+        const isArmOn = b.dataset.on === "1";
+        b.classList.toggle("armed", !!d.manual_feed_arm && !!(f && f.armed) && isArmOn);
+      });
+    }
     if (d.pov){
       const ps = d.pov.state || "";                       // guard: version-skewed relay
       let [txt, cls] = FEED_STATE[ps] || [ps.toUpperCase(), ""];
@@ -1621,50 +1734,56 @@ async function relayPoll(){
       $("#stPov").innerHTML = "POV <b>" + (txt || "—") + "</b>";
     } else { $("#stPov").className = "st"; $("#stPov").innerHTML = "POV <b>—</b>"; }
     if (povVisBtn) povVisBtn.classList.toggle("on", !!(d.pov && d.pov.shown));
-    const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
-    if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
-    // #493: auto-step-down alert — a managed feed (not pinned) that dropped to ROBUST.
-    ["A","B"].forEach(k => {
-      const f = d.feeds[k];
-      if (f && f.profile === "robust" && !f.pinned)
-        lines.push(`<span class="warnline">⚠ Feed ${k} · auto-dropped to ROBUST (720p) — source struggling; raise it again when it recovers</span>`);
-    });
-    // #495: auto-cover alert — the relay auto-raised the Standby Cover over an offline
-    // on-air source. The RED FLAG light already shows the cover is up; this line says WHY.
-    if (d.auto_cover_active)
-      lines.push('<span class="warnline">⚠ On-air source offline — Standby Cover auto-raised (RED FLAG to override)</span>');
-    // #493: highlight the active quality profile per feed (the pinned tier, or AUTO when managed).
-    document.querySelectorAll("#feedQuality .qbtn:not(.qprev):not(.armbtn)").forEach(b => {
-      const f = d.feeds[b.dataset.feed];
-      if (!f) return;
-      const active = f.pinned ? (b.dataset.tier === f.profile) : (b.dataset.tier === "auto");
-      b.classList.toggle("active", active);
-    });
-    // Actually-served resolution per feed (e.g. 1080p60); YouTube from yt-dlp, Twitch from
-    // streamlink. Empty when unknown / feed idle (escaped like last_error).
-    document.querySelectorAll("#feedQuality .qres").forEach(el => {
-      const f = d.feeds[el.dataset.qres];
-      el.textContent = (f && f.quality) ? f.quality : "";
-    });
-    // #493: preview buttons — stash each feed's current stream URL + enable only for a real
-    // URL (absent when the feed is idle, or redacted for a non-director subject over Funnel).
-    document.querySelectorAll("#feedQuality .qprev").forEach(b => {
-      const f = d.feeds[b.dataset.feed];
-      const u = (f && f.channel) || "";
-      b.dataset.url = u;
-      b.disabled = !previewUrlOk(u);
-    });
-    if (d.mode === "qualifying")
-      lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
-    // One mode-aware schedule block: applyMode toggles the race/qualifying
-    // regions + the mode chip + the switch label. POV stays visible in both.
-    applyMode(d.mode === "qualifying");
-    $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    if (!solo){
+      const lines = [healthLine("A", d.feeds.A), healthLine("B", d.feeds.B)];
+      if (d.pov && d.pov.state !== "stopped") lines.push(healthLine("POV", d.pov));
+      // #493: auto-step-down alert — a managed feed (not pinned) that dropped to ROBUST.
+      ["A","B"].forEach(k => {
+        const f = d.feeds[k];
+        if (f && f.profile === "robust" && !f.pinned)
+          lines.push(`<span class="warnline">⚠ Feed ${k} · auto-dropped to ROBUST (720p) — source struggling; raise it again when it recovers</span>`);
+      });
+      // #495: auto-cover alert — the relay auto-raised the Standby Cover over an offline
+      // on-air source. The RED FLAG light already shows the cover is up; this line says WHY.
+      if (d.auto_cover_active)
+        lines.push('<span class="warnline">⚠ On-air source offline — Standby Cover auto-raised (RED FLAG to override)</span>');
+      // #493: highlight the active quality profile per feed (the pinned tier, or AUTO when managed).
+      document.querySelectorAll("#feedQuality .qbtn:not(.qprev):not(.armbtn)").forEach(b => {
+        const f = d.feeds[b.dataset.feed];
+        if (!f) return;
+        const active = f.pinned ? (b.dataset.tier === f.profile) : (b.dataset.tier === "auto");
+        b.classList.toggle("active", active);
+      });
+      // Actually-served resolution per feed (e.g. 1080p60); YouTube from yt-dlp, Twitch from
+      // streamlink. Empty when unknown / feed idle (escaped like last_error).
+      document.querySelectorAll("#feedQuality .qres").forEach(el => {
+        const f = d.feeds[el.dataset.qres];
+        el.textContent = (f && f.quality) ? f.quality : "";
+      });
+      // #493: preview buttons — stash each feed's current stream URL + enable only for a real
+      // URL (absent when the feed is idle, or redacted for a non-director subject over Funnel).
+      document.querySelectorAll("#feedQuality .qprev").forEach(b => {
+        const f = d.feeds[b.dataset.feed];
+        const u = (f && f.channel) || "";
+        b.dataset.url = u;
+        b.disabled = !previewUrlOk(u);
+      });
+      if (d.mode === "qualifying")
+        lines.unshift('<span class="warnline">QUALIFYING MODE — Feed A serves the Qualifying tab (race schedule paused)</span>');
+      // One mode-aware schedule block: applyMode toggles the race/qualifying
+      // regions + the mode chip + the switch label. POV stays visible in both.
+      applyMode(d.mode === "qualifying");
+      $("#feedHealth").innerHTML = lines.filter(Boolean).join("<br>");
+    } else {
+      $("#feedHealth").innerHTML = "";
+    }
     // Feed-down alarm: a feed that was live and dropped unexpectedly (not a
     // handover). Distinct red banner so the director acts (RELOAD or cut away).
     const downNames = [];
-    if (d.feeds.A.down) downNames.push("A");
-    if (d.feeds.B.down) downNames.push("B");
+    if (!solo){
+      if (d.feeds.A.down) downNames.push("A");
+      if (d.feeds.B.down) downNames.push("B");
+    }
     if (d.pov && d.pov.down) downNames.push("POV");
     if (downNames.length)
       setBanner("feeddown", "red",
@@ -1687,8 +1806,8 @@ async function relayPoll(){
     else clearBanner("cookies");
     if (d.obs && d.obs.reachable === false)
       setBanner("obs", "amber",
-        "OBS NOT REACHABLE — NEXT can't auto-cut · use the manual FEED/scene buttons; " +
-        "Feed " + (d.feeds.A.state === "serving" ? "A" : "B") + " state shown above");
+        "OBS NOT REACHABLE — NEXT can't auto-cut · use the manual FEED/scene buttons" +
+        (solo ? "" : "; Feed " + (d.feeds.A.state === "serving" ? "A" : "B") + " state shown above"));
     else clearBanner("obs");
   }catch(e){
     relayLed(false);
@@ -2231,6 +2350,7 @@ $("#povUrl").addEventListener("input", ()=>$("#povUrl").dataset.dirty = 1);
 $("#povName").addEventListener("input", ()=>$("#povName").dataset.dirty = 1);
 
 async function schedPoll(){
+  if (document.body.classList.contains("solo")) return;   // no schedule in solo (box is force-open for POV)
   if (!$("#urlsBox").open) return;   // closed section -> no traffic
   try{
     const r = await fetch("/schedule/data", {cache:"no-store"});
@@ -2280,6 +2400,24 @@ function applyMode(qualifying){
   $("#modeChip").classList.toggle("qual", qualifying);
   $("#modeSwitch").textContent = qualifying ? "switch → RACE" : "switch → QUALIFYING";
 }
+// Kind-conditional cut (#307): a feed-less solo relay reports {solo:true}. Hide
+// the A/B feed + schedule + submission affordances and reveal the POV editor as
+// its own card. Endurance (solo=false) is byte-identical — no class is set.
+function applySolo(isSolo){
+  document.body.classList.toggle("solo", !!isSolo);
+  const box = $("#urlsBox");
+  if (box && isSolo) box.open = true;   // POV lives in the schedule <details>;
+                                        // force it open so the POV card shows.
+  // One-time rebuild of the OBS-control busses for the solo collection
+  // (#307 Increment 2 §A): the panel builds CONFIG's endurance buttons at
+  // load, before the first /status — this poll is the first point solo is
+  // knowable. Endurance never sets the latch, so its build stays untouched.
+  if (isSolo && !window.__builtSolo){
+    window.__builtSolo = true;
+    buildControls(CONFIG_SOLO);
+    buildPovActions();
+  }
+}
 function qualRowBusy(){
   const tr = $("#qualRow");
   return tr.dataset.dirty || tr.contains(document.activeElement) ||
@@ -2327,6 +2465,7 @@ $("#modeSwitch").addEventListener("click", async (e)=>{
   qualPoll();
 });
 async function qualPoll(){
+  if (document.body.classList.contains("solo")) return;   // no qualifying in solo (box is force-open for POV)
   if (!$("#urlsBox").open) return;   // closed section -> no traffic
   try{
     const r = await fetch("/qualifying/data", {cache:"no-store"});

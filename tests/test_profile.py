@@ -23,7 +23,8 @@ def _raises(fn, exc=ValueError):
 def t_parse_list_takes_no_args():
     assert m.parse_profile_args(["list"]) == {
         "verb": "list", "name": None, "source": "example",
-        "no_assets": False, "out": None, "file": None, "force": False}
+        "no_assets": False, "out": None, "file": None, "force": False,
+        "kind": "endurance", "template": None}
     _raises(lambda: m.parse_profile_args(["list", "extra"]))
 
 
@@ -36,7 +37,8 @@ def t_parse_show_optional_name():
 def t_parse_use_requires_one_name():
     assert m.parse_profile_args(["use", "erf"]) == {
         "verb": "use", "name": "erf", "source": "example",
-        "no_assets": False, "out": None, "file": None, "force": False}
+        "no_assets": False, "out": None, "file": None, "force": False,
+        "kind": "endurance", "template": None}
     # --force lets `profile use` switch past a running relay/streams (#273)
     assert m.parse_profile_args(["use", "erf", "--force"])["force"] is True
     assert m.parse_profile_args(["use", "erf"])["force"] is False
@@ -48,13 +50,40 @@ def t_parse_use_requires_one_name():
 def t_parse_new_with_from():
     assert m.parse_profile_args(["new", "erf"]) == {
         "verb": "new", "name": "erf", "source": "example",
-        "no_assets": False, "out": None, "file": None, "force": False}
+        "no_assets": False, "out": None, "file": None, "force": False,
+        "kind": "endurance", "template": None}
     assert m.parse_profile_args(["new", "erf", "--from", "demo"])["source"] == "demo"
     assert m.parse_profile_args(["new", "erf", "--from=demo"])["source"] == "demo"
     _raises(lambda: m.parse_profile_args(["new"]))
     _raises(lambda: m.parse_profile_args(["new", "erf", "--bogus"]))
     _raises(lambda: m.parse_profile_args(["new", "erf", "--from"]))    # missing value
     _raises(lambda: m.parse_profile_args(["new", "erf", "--from="]))   # empty value
+
+
+def t_parse_new_kind_and_template():
+    # default kind is endurance, no template
+    o = m.parse_profile_args(["new", "erf"])
+    assert o["kind"] == "endurance" and o["template"] is None
+    # solo with an explicit template
+    o = m.parse_profile_args(["new", "solo1", "--kind", "solo", "--template", "pov"])
+    assert o["kind"] == "solo" and o["template"] == "pov"
+    assert m.parse_profile_args(
+        ["new", "solo1", "--kind=solo", "--template=commentary"])["template"] == "commentary"
+    # solo without --template defaults to the first starter template
+    assert m.parse_profile_args(
+        ["new", "solo1", "--kind", "solo"])["template"] == m.cfg.SOLO_TEMPLATES[0]
+
+
+def t_parse_new_kind_template_validation():
+    _raises(lambda: m.parse_profile_args(["new", "x", "--kind", "bogus"]))
+    _raises(lambda: m.parse_profile_args(["new", "x", "--kind", "solo", "--template", "bogus"]))
+    # --template only valid with --kind solo
+    _raises(lambda: m.parse_profile_args(["new", "x", "--template", "pov"]))
+    # --from cannot combine with a generated solo profile
+    _raises(lambda: m.parse_profile_args(["new", "x", "--kind", "solo", "--from", "demo"]))
+    # missing/empty values
+    _raises(lambda: m.parse_profile_args(["new", "x", "--kind"]))
+    _raises(lambda: m.parse_profile_args(["new", "x", "--kind", "solo", "--template"]))
 
 
 def t_parse_unknown_verb_raises():
@@ -124,6 +153,32 @@ def t_create_profile_from_other_profile():
             fh.write("NAME=Demo\nSHEET_ID=abc\n")
         m.create_profile(root, "erf", source="demo")
         assert m.cfg.parse_profile(root, "erf")["SHEET_ID"] == "abc"
+
+
+def t_create_solo_profile_has_sheet_and_carries_template():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot_with_example(td)
+        target = m.create_profile(root, "Demo Solo", kind="solo", template="pov")
+        assert target == os.path.join(root, "profiles", "demo-solo")
+        assert m.cfg.list_profiles(root) == ["demo-solo"]
+        prof = m.cfg.parse_profile(root, "demo-solo")
+        assert prof["NAME"] == "Demo Solo"
+        assert prof["KIND"] == "solo"
+        assert prof["TEMPLATE"] == "pov"
+        # sheet-always: a solo profile carries SHEET_ID (blank, to be filled)
+        assert "SHEET_ID" in prof and prof["SHEET_ID"] == ""
+        assert "SHEET_PUSH_URL" in prof
+        # and it resolves as a solo profile
+        rcfg = m.cfg.resolve_config(root, override="demo-solo",
+                                    runtime_root=os.path.join(td, "runtime"))
+        assert rcfg.kind == "solo" and rcfg.template == "pov"
+
+
+def t_create_solo_profile_defaults_template():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot_with_example(td)
+        m.create_profile(root, "s1", kind="solo")
+        assert m.cfg.parse_profile(root, "s1")["TEMPLATE"] == m.cfg.SOLO_TEMPLATES[0]
 
 
 def t_create_profile_accepts_spaces_via_slug_and_sets_display_name():

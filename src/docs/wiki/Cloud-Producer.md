@@ -241,7 +241,7 @@ same session OBS runs in — so the remote desktop, OBS and the install tree are
 Then, per league, import the localized scene collection into OBS once:
 
 ```bash
-racecast setup                    # writes runtime/<profile>/GT_Endurance.import.json
+racecast setup                    # writes runtime/<profile>/GT_Racing_Endurance.import.json
 # in the OBS GUI over RustDesk: Scene Collection → Import → that file
 ```
 

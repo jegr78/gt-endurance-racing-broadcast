@@ -214,6 +214,31 @@ def t_resolve_config_logo_path_blank_when_file_missing():
         assert cfg.logo_path == ""
 
 
+def t_normalize_kind_folds_to_known():
+    assert m.normalize_kind("solo") == "solo"
+    assert m.normalize_kind("endurance") == "endurance"
+    assert m.normalize_kind(" SOLO ") == "solo"          # trimmed + lowercased
+    assert m.normalize_kind("") == m.DEFAULT_KIND         # blank -> default
+    assert m.normalize_kind(None) == m.DEFAULT_KIND
+    assert m.normalize_kind("bogus") == m.DEFAULT_KIND    # unknown -> default
+
+
+def t_resolve_config_kind_defaults_to_endurance():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "demo", "SHEET_ID=a\n")          # no KIND -> backwards-compat
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.kind == "endurance" and cfg.template == ""
+
+
+def t_resolve_config_kind_solo_with_template():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "s1", "NAME=Solo One\nKIND=solo\nTEMPLATE=pov\n")
+        cfg = m.resolve_config(root, environ={})
+        assert cfg.kind == "solo" and cfg.template == "pov"
+
+
 def t_resolve_config_discord_webhook_from_field():
     with tempfile.TemporaryDirectory() as td:
         root = _mkroot(td)
@@ -274,7 +299,7 @@ def t_resolve_config_obs_collection_falls_back_to_name():
         _mkprofile(root, "erf", "NAME=ERF Endurance\nSHEET_ID=abc\n")
         cfg = m.resolve_config(root, environ={})
         # default = product prefix + the league NAME (em-dash separator)
-        assert cfg.obs_collection == "GT Endurance Racing — ERF Endurance"
+        assert cfg.obs_collection == "GT Racing Endurance — ERF Endurance"
 
 
 def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
@@ -283,7 +308,7 @@ def t_resolve_config_obs_collection_falls_back_to_profile_dir_when_no_name():
         _mkprofile(root, "erf", "SHEET_ID=abc\n")   # no NAME, no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
         # falls back to cfg.name (= profile dir name), still prefixed
-        assert cfg.obs_collection == "GT Endurance Racing — erf"
+        assert cfg.obs_collection == "GT Racing Endurance — erf"
 
 
 def t_resolve_config_obs_collection_default_is_prefixed():
@@ -291,7 +316,7 @@ def t_resolve_config_obs_collection_default_is_prefixed():
         root = _mkroot(td)
         _mkprofile(root, "demo", "NAME=Demo League\nSHEET_ID=x\n")  # no OBS_COLLECTION
         cfg = m.resolve_config(root, environ={})
-        assert cfg.obs_collection == "GT Endurance Racing — Demo League"
+        assert cfg.obs_collection == "GT Racing Endurance — Demo League"
 
 
 def t_resolve_config_discord_oauth_keys():
@@ -342,6 +367,25 @@ def t_resolve_config_obs_collection_explicit_wins_over_prefix():
                    "NAME=Demo League\nSHEET_ID=x\nOBS_COLLECTION=Custom Name\n")
         cfg = m.resolve_config(root, environ={})
         assert cfg.obs_collection == "Custom Name"
+
+
+def t_solo_kind_defaults_solo_collection_name():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "myleague",
+                   "NAME=My League\nSHEET_ID=abc\nKIND=solo\nTEMPLATE=commentary\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.kind == "solo"
+        assert rc.obs_collection == "GT Racing Solo — My League"
+
+
+def t_endurance_collection_name_unchanged():
+    with tempfile.TemporaryDirectory() as td:
+        root = _mkroot(td)
+        _mkprofile(root, "endur", "NAME=Endur\nSHEET_ID=abc\n")
+        rc = m.resolve_config(root, environ={})
+        assert rc.kind == "endurance"
+        assert rc.obs_collection == "GT Racing Endurance — Endur"
 
 
 def t_sheet_edit_url_builds_edit_link():

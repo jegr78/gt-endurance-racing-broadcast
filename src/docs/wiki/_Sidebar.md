@@ -1,4 +1,4 @@
-### GT Endurance Racing Broadcast
+### GT Racing Broadcast
 
 **Start here**
 - [Home](Home)

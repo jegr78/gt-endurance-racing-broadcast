@@ -5,7 +5,7 @@ description: Regenerate the wiki's Companion button-board screenshots (src/docs/
 
 # Companion button-board screenshots
 
-Recreate the wiki screenshots of the Companion button grid for the GT Endurance Racing
+Recreate the wiki screenshots of the Companion button grid for the GT Racing
 Broadcast toolkit. The grid is served by a **running** Companion instance; this skill
 screenshots it through a headless browser (Playwright MCP) and crops out the toolbar with
 **ffmpeg** (already a project dependency). No pip dependencies, no manual cropping math.

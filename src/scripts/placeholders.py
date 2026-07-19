@@ -16,9 +16,13 @@ GRAPHIC_PLACEHOLDER = "transparent-1080p.png"
 MEDIA_PLACEHOLDER = "neutral-5s-1080p.mp4"
 MUSIC_PLACEHOLDER = "neutral-ambient-loop.mp3"
 
-_GRAPHICS_REF_RE = re.compile(r"__RACECAST_GRAPHICS__/([^\"\\]+\.png)")
-_MEDIA_REF_RE = re.compile(r"__RACECAST_MEDIA__/([^\"\\]+\.(?:mp4|mp3|m4a|wav|ogg))")
-_OBS_TEMPLATE_NAMES = ("GT_Endurance.template.json", "GT_Endurance.json")
+# The captured name must be a bare basename: forbid '/' (and '\\', '"') so a
+# crafted template ref like __RACECAST_GRAPHICS__/../../x.png cannot yield a
+# traversing name that escapes the graphics dir when joined for read/write
+# (fill_missing writes, seed_committed_graphics reads+copies). See setup-assets.
+_GRAPHICS_REF_RE = re.compile(r"__RACECAST_GRAPHICS__/([^\"\\/]+\.png)")
+_MEDIA_REF_RE = re.compile(r"__RACECAST_MEDIA__/([^\"\\/]+\.(?:mp4|mp3|m4a|wav|ogg))")
+_OBS_TEMPLATE_NAMES = ("GT_Racing_Endurance.template.json", "GT_Racing_Endurance.json")
 
 
 def _placeholders_dir():

@@ -17,7 +17,7 @@ tool = _load("add_intermission_scene", os.path.join("tools", "add_intermission_s
 
 
 def _collection():
-    with open(os.path.join(ROOT, "src", "obs", "GT_Endurance.json"), encoding="utf-8") as fh:
+    with open(os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json"), encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -47,7 +47,7 @@ def t_no_duplicate_source_names():
     # name->object lookup (SetCurrentProgramScene 602). Guard the whole template.
     names = [s.get("name") for s in _collection()["sources"]]
     dups = sorted({n for n in names if names.count(n) > 1})
-    assert not dups, f"duplicate source names in GT_Endurance.json: {dups}"
+    assert not dups, f"duplicate source names in GT_Racing_Endurance.json: {dups}"
 
 
 def t_no_duplicate_scene_item_ids():
@@ -67,7 +67,7 @@ def t_no_duplicate_scene_item_ids():
         dups = {i: names for i, names in by_id.items() if len(names) > 1}
         if dups:
             offenders[src.get("name")] = dups
-    assert not offenders, f"duplicate sceneItemIds per scene in GT_Endurance.json: {offenders}"
+    assert not offenders, f"duplicate sceneItemIds per scene in GT_Racing_Endurance.json: {offenders}"
 
 
 def t_tokens_and_url_are_correct():

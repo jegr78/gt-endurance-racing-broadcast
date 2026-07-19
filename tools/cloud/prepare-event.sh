@@ -140,7 +140,7 @@ readiness_report() {
   if tailnet_joined; then _ok "tailnet joined ($(tailscale ip -4 2>/dev/null | grep -E '^100\.' | head -1))"
   else _bad "tailnet NOT joined — run:  sudo tailscale up --ssh --hostname racecast-box"; fail=1; fi
 
-  if [ -s "$RUNTIME/$LEAGUE/GT_Endurance.import.json" ]; then _ok "OBS scene collection localized for '$LEAGUE'"
+  if [ -s "$RUNTIME/$LEAGUE/GT_Racing_Endurance.import.json" ]; then _ok "OBS scene collection localized for '$LEAGUE'"
   else _bad "OBS collection not localized — run 'racecast setup', then import it into OBS over RustDesk (once per league)"; fail=1; fi
 
   # advisory (surfaced, do NOT block the exit code)
