@@ -368,6 +368,148 @@ def t_feed_freeze_tuning_getter_defaults():
     assert m.feed_freeze_cooldown_s({"RACECAST_FEED_FREEZE_COOLDOWN_S": "x"}) == 60.0
 
 
+def t_ring_trailing_offset_holds_reserve():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):                     # write 100 bytes/s; live edge = (i+1)*100
+        r.write(b"x" * 100, now=float(i))
+    # 3 s behind now=9 -> newest mark with ts<=6 is (700, 6)
+    assert r.trailing_offset(3.0, now=9.0) == 700
+
+
+def t_ring_offset_at_age_clamps_to_start_when_young():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 100, now=0.0)
+    r.write(b"x" * 100, now=0.5)            # only 0.5 s of history
+    assert r.offset_at_age(3.0, now=0.5) == r.start_offset() == 0
+
+
+def t_ring_trailing_offset_zero_is_live_edge():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    assert r.trailing_offset(0.0, now=5.0) == r.live_offset() == 500
+
+
+def t_ring_marks_throttled():
+    r = m.FeedRing(10_000)
+    for i in range(20):                     # 20 writes 10 ms apart = 0.19 s span
+        r.write(b"x" * 10, now=i * 0.01)
+    assert len(r._marks) <= 3               # MARK_MIN_INTERVAL_S=0.1 -> ~2-3 marks
+
+
+def t_ring_marks_pruned_on_overflow():
+    r = m.FeedRing(250)
+    for i in range(10):                     # 1 s apart -> each its own mark
+        r.write(b"x" * 100, now=float(i))
+    assert r.start_offset() == 750          # 1000 written, cap 250
+    assert all(off > 750 for off, _ in r._marks)   # scrolled-out marks pruned
+
+
+def t_ring_write_still_works_without_now():
+    r = m.FeedRing(1024)                     # production writer passes no `now`
+    r.write(b"abc")
+    data, cur = r.read(0, timeout=0.1)
+    assert data == b"abc" and cur == 3
+
+
+def t_feed_prebuffer_s_default_and_overrides():
+    assert m.feed_prebuffer_s({}) == 3.0                                   # absent -> default
+    assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": ""}) == 3.0    # empty -> default
+    assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": "3.5"}) == 3.5
+    assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": "0"}) == 0.0   # explicit disable
+    assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": "-1"}) == 0.0  # negative clamps to 0
+    assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": "abc"}) == 3.0 # invalid -> default
+
+
+def t_fanout_join_offset_trailing_when_indexed():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))
+    assert m.fanout_join_offset(r, 3.0, now=9.0) == 700
+
+
+def t_fanout_join_offset_zero_prebuffer_is_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    assert m.fanout_join_offset(r, 0.0, now=5.0) == 500
+
+
+def t_fanout_join_offset_falls_back_without_index():
+    class BareLive:
+        def live_offset(self):
+            return 42
+    assert m.fanout_join_offset(BareLive(), 3.0, now=9.0) == 42
+
+    class Bare:
+        pass
+    assert m.fanout_join_offset(Bare(), 3.0, now=9.0) == 0
+
+
+def t_fanout_server_join_uses_prebuffer():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))
+    srv = m.FeedFanoutServer("127.0.0.1", 0, r, m.logging.getLogger("t533"),
+                             prebuffer_s=3.0)
+    assert srv.prebuffer_s == 3.0
+    assert srv._join_offset(now=9.0) == 700
+
+
+def t_ring_read_high_caps_at_offset():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1, high=400)
+    assert cur == 400 and len(data) == 400
+
+
+def t_ring_read_high_none_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1)                 # high omitted -> live edge (unchanged)
+    assert cur == 1000 and len(data) == 1000
+
+
+def t_ring_read_at_cap_returns_empty():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(400, 0.05, high=400)    # cursor already at the cap
+    assert data == b"" and cur == 400
+
+
+def t_fanout_capped_read_holds_below_trailing():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))      # live=1000; trailing(3,9)=700
+    data, cur = m.fanout_capped_read(r, 0, 3.0, now=9.0)
+    assert cur == 700 and len(data) == 700     # capped at the trailing high-water
+
+
+def t_fanout_capped_read_zero_prebuffer_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    data, cur = m.fanout_capped_read(r, 0, 0.0, now=5.0)
+    assert cur == 500 and len(data) == 500
+
+
+def t_feed_prebuffer_s_rejects_non_finite():
+    for v in ("inf", "-inf", "nan", "Infinity", "NaN"):
+        assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": v}) == 3.0, v
+
+
+def t_fanout_capped_read_falls_back_without_time_index():
+    # prebuffer_s > 0 but the ring has no trailing_offset (direct-serve / a test
+    # double): fanout_capped_read must take the live-edge branch (no cap applied).
+    calls = {}
+
+    class _NoIndexRing:
+        def read(self, cursor, timeout, high=None):
+            calls["high"] = high
+            return b"tail", 500
+
+    data, cur = m.fanout_capped_read(_NoIndexRing(), 0, 3.0, now=9.0)
+    assert (data, cur) == (b"tail", 500)
+    assert calls["high"] is None            # live-edge branch: no cap passed to read
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

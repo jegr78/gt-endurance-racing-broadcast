@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
+import argparse, collections, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -341,6 +341,8 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
 FANOUT_RING_BYTES = 16 * 1024 * 1024  # per-feed ring window (bounded; ≈12 s at 10 Mbps). #488: 8→16 MB headroom so the auto-resync fires an orderly rebuild below the hard cursor-snap.
+MARK_MIN_INTERVAL_S = 0.1        # #533: throttle the FeedRing time index to ~1 mark/100 ms
+DEFAULT_FEED_PREBUFFER_S = 3.0   # #533: seconds a broadcast consumer joins behind the fan-out live edge
 AUTORESYNC_DEBOUNCE_POLLS = 2  # #488: consecutive heartbeat polls over the skip-rate threshold before an auto-resync fires
 _FANOUT_FALSEY = {"0", "false", "no", "off"}
 
@@ -364,6 +366,23 @@ def feed_robust_auto_enabled(environ):
     """#493 auto FULL->ROBUST step-down. Default ON; RACECAST_FEED_ROBUST_AUTO=0 disables
     only the automatic step-down (manual switching always remains). Pure → unit-tested."""
     return (environ.get("RACECAST_FEED_ROBUST_AUTO") or "").strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_prebuffer_s(environ, default=DEFAULT_FEED_PREBUFFER_S):
+    """Seconds OBS and the program-audio monitor join behind the fan-out live edge
+    (#533). Absent/empty/non-numeric/non-finite -> default; a valid finite number
+    (incl. 0) is used as-is; negatives clamp to 0.0 (disabled = today's live-edge
+    join). Pure so the knob is unit-testable."""
+    raw = str(environ.get("RACECAST_FEED_PREBUFFER_S", "")).strip()
+    if raw == "":
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        return default
+    if v != v or v == float("inf") or v == float("-inf"):
+        return default                       # reject nan/inf -> default (no import needed)
+    return max(0.0, v)
 
 
 def _env_float(environ, key, default):
@@ -3590,10 +3609,11 @@ class FeedRing:
         self.capacity = capacity
         self._buf = bytearray()
         self._base = 0                 # absolute offset of self._buf[0]
+        self._marks = collections.deque()   # #533: (live_offset, monotonic_ts) samples, throttled+pruned
         self._cond = threading.Condition()
         self.closed = False
 
-    def write(self, data):
+    def write(self, data, now=None):
         if not data:
             return
         with self._cond:
@@ -3602,7 +3622,20 @@ class FeedRing:
             if overflow > 0:
                 del self._buf[:overflow]
                 self._base += overflow
+            live = self._base + len(self._buf)
+            self._record_mark(live, now)     # #533: time index for trailing joins
             self._cond.notify_all()
+
+    def _record_mark(self, live, now):
+        # Caller holds self._cond. Sample the live edge at most once per
+        # MARK_MIN_INTERVAL_S, then drop marks that have scrolled out of the
+        # retained window (offset <= base). Pure aside from the default clock.
+        if now is None:
+            now = time.monotonic()
+        if not self._marks or (now - self._marks[-1][1]) >= MARK_MIN_INTERVAL_S:
+            self._marks.append((live, now))
+        while self._marks and self._marks[0][0] <= self._base:
+            self._marks.popleft()
 
     def live_offset(self):
         with self._cond:
@@ -3612,23 +3645,79 @@ class FeedRing:
         with self._cond:
             return self._base
 
-    def read(self, cursor, timeout):
+    def offset_at_age(self, age_s, now):
+        """The absolute offset that was the live edge ~age_s ago (the newest mark
+        with ts <= now-age_s), clamped to the retained window. When the ring holds
+        less than age_s of history it returns start_offset (serve the oldest
+        retained byte). Pure — now is injected."""
         with self._cond:
             live = self._base + len(self._buf)
-            if cursor >= live and not self.closed:
+            target = now - age_s
+            chosen = self._base
+            for off, ts in self._marks:
+                if ts <= target:
+                    chosen = off
+                else:
+                    break
+            return min(max(self._base, chosen), live)
+
+    def trailing_offset(self, prebuffer_s, now):
+        """The join offset prebuffer_s seconds behind the live edge (#533);
+        the live edge itself when prebuffer_s <= 0 (today's behaviour)."""
+        if prebuffer_s <= 0:
+            return self.live_offset()
+        return self.offset_at_age(prebuffer_s, now)
+
+    def read(self, cursor, timeout, high=None):
+        with self._cond:
+            live = self._base + len(self._buf)
+            limit = live if high is None else min(high, live)
+            if cursor >= limit and not self.closed:
                 self._cond.wait(timeout)
                 live = self._base + len(self._buf)
+                limit = live if high is None else min(high, live)
             if cursor < self._base:        # fell behind → snap to oldest retained byte (lose only overflowed)
                 cursor = self._base
-            if cursor >= live:
+            # `limit` may be below `cursor` (e.g. a trailing `high` computed just
+            # before `base` overflowed past it, #533): the empty return below guards
+            # it — the slice is never reached with a negative bound. Self-corrects
+            # next cycle on a fresh `high`.
+            if cursor >= limit:
                 return b"", cursor
-            data = bytes(self._buf[cursor - self._base:])
-            return data, live
+            data = bytes(self._buf[cursor - self._base: limit - self._base])
+            return data, limit
 
     def close(self):
         with self._cond:
             self.closed = True
             self._cond.notify_all()
+
+
+def fanout_join_offset(ring, prebuffer_s, now):
+    """Absolute cursor a BROADCAST consumer (OBS, program-audio) joins at: prebuffer_s
+    seconds behind the ring's live edge (#533), or the live edge when prebuffer_s <= 0
+    or the ring has no time index (direct-serve / test doubles). Pure — now injected."""
+    if hasattr(ring, "trailing_offset"):
+        return ring.trailing_offset(prebuffer_s, now)
+    if hasattr(ring, "live_offset"):
+        return ring.live_offset()
+    return 0
+
+
+def fanout_capped_read(ring, cursor, prebuffer_s, now=None,
+                       timeout_capped=0.2, timeout_live=1.0):
+    """One read for a trailing broadcast consumer (#533): when prebuffer_s > 0 and
+    the ring has a time index, cap the read at the trailing high-water mark
+    trailing_offset(prebuffer_s, now) -- it advances at wall-clock 1x, so a greedy
+    consumer cannot outrun it and the held-back reserve is released during a source
+    stall. Otherwise read to the live edge. Returns (data, new_cursor). now is
+    injected for tests."""
+    if prebuffer_s > 0 and hasattr(ring, "trailing_offset"):
+        if now is None:
+            now = time.monotonic()
+        high = ring.trailing_offset(prebuffer_s, now)
+        return ring.read(cursor, timeout_capped, high=high)
+    return ring.read(cursor, timeout_live)
 
 
 class FeedFanoutServer:
@@ -3637,15 +3726,19 @@ class FeedFanoutServer:
     stalls only its own handler; the ring writer is never touched. Best effort:
     a handler error closes that socket and returns."""
 
-    def __init__(self, host, port, ring, log):
+    def __init__(self, host, port, ring, log, prebuffer_s=0.0):
         self.host = host
         self.port = port
         self.ring = ring
         self.log = log
+        self.prebuffer_s = prebuffer_s        # #533: join OBS this far behind the live edge
         self._sock = None
         self._stop = False
         self._consumers = {}            # id -> {"cycle_ts": float, "snaps": int}
         self._consumers_lock = threading.Lock()
+
+    def _join_offset(self, now):
+        return fanout_join_offset(self.ring, self.prebuffer_s, now)
 
     def start(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3671,13 +3764,13 @@ class FeedFanoutServer:
             conn.sendall(b"HTTP/1.0 200 OK\r\n"
                          b"Content-Type: video/mp2t\r\n"
                          b"Connection: close\r\n\r\n")
-            cursor = self.ring.live_offset()    # join at the live edge
+            cursor = self._join_offset(time.monotonic())   # #533: join prebuffer_s behind the live edge
             cid = id(threading.current_thread())
             with self._consumers_lock:
                 self._consumers[cid] = {"cycle_ts": time.monotonic(), "snaps": 0}
             while not self._stop and not self.ring.closed:
                 prev = cursor
-                data, cursor = self.ring.read(cursor, timeout=1.0)
+                data, cursor = fanout_capped_read(self.ring, cursor, self.prebuffer_s)
                 skipped = snap_bytes(prev, cursor, len(data))
                 with self._consumers_lock:
                     st = self._consumers.get(cid)
@@ -3947,15 +4040,19 @@ class ProgramAudioService:
         threading.Thread(target=self._pump_stderr, args=(ff.stderr,), daemon=True).start()
         return ff, ff.stdin, ff.stdout
 
+    def _join_offset(self, ring, now):
+        return fanout_join_offset(ring, getattr(self.relay, "feed_prebuffer_s", 0.0), now)
+
     def _feed_stdin(self, stdin, ring, proc):
         """Pump on-air ring bytes into THIS encoder generation's ffmpeg stdin;
-        join at the ring's current live edge (only recent data, no rewind).
+        join feed_prebuffer_s behind the live edge to match the broadcast (#533).
         *proc* is the process this thread owns — checked instead of the shared
         self._proc, which a handover reassigns to the NEXT generation."""
-        cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+        cursor = self._join_offset(ring, time.monotonic())   # #533: match OBS's trailing join
         try:
             while not self._stop.is_set() and not getattr(ring, "closed", False):
-                data, cursor = ring.read(cursor, 1.0)
+                data, cursor = fanout_capped_read(
+                    ring, cursor, getattr(self.relay, "feed_prebuffer_s", 0.0))
                 if data:
                     stdin.write(data); stdin.flush()
                 if proc is None or proc.poll() is not None:
@@ -5862,6 +5959,7 @@ class Relay:
             self.pov.quality_pinned = True
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
+        self.feed_prebuffer_s = feed_prebuffer_s(os.environ)   # #533: OBS/program-audio trailing depth
         self.program_audio = program_audio_enabled(os.environ)
         self._fanout_servers = []
         # Auto-failover to the Intermission scene on confirmed on-air feed loss
@@ -5934,7 +6032,8 @@ class Relay:
             for _name, f in live:
                 f.ring = FeedRing(FANOUT_RING_BYTES)
                 srv = FeedFanoutServer("127.0.0.1", f.port, f.ring,
-                                       logging.getLogger("racecast.fanout." + f.name))
+                                       logging.getLogger("racecast.fanout." + f.name),
+                                       prebuffer_s=self.feed_prebuffer_s)
                 srv.start()
                 f.fanout_server = srv          # #488: the freeze detector reads its consumer snap count
                 self._fanout_servers.append(srv)
