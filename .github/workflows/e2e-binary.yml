@@ -14,7 +14,7 @@ name: e2e-binary
 # unrelated PR finishes in seconds and never blocks.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "epic/**"]   # gate sub-PRs targeting a long-lived epic branch
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 

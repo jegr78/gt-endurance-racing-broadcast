@@ -10,7 +10,7 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-OBS = os.path.join(ROOT, "src", "obs", "GT_Endurance.json")
+OBS = os.path.join(ROOT, "src", "obs", "GT_Racing_Endurance.json")
 PANEL = os.path.join(ROOT, "src", "director", "director-panel.html")
 COMPANION = os.path.join(ROOT, "src", "companion",
                          "racecast-buttons.companionconfig")

@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "epic/**"]   # gate sub-PRs targeting a long-lived epic branch
   schedule:
     - cron: "27 4 * * 1"  # weekly catch-all (Mondays), independent of pushes
 

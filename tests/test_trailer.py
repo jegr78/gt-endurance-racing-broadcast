@@ -12,7 +12,7 @@ def _read(rel):
 
 
 def t_obs_collection_has_trailer_scene_and_source():
-    cfg = json.loads(_read(os.path.join("src", "obs", "GT_Endurance.json")))
+    cfg = json.loads(_read(os.path.join("src", "obs", "GT_Racing_Endurance.json")))
     names = {s.get("name") for s in cfg.get("sources", [])}
     assert "Trailer" in names, "no Trailer scene in the collection"
     assert "Trailer Video" in names, "no Trailer Video source"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Profile-aware configuration resolver for the GT Endurance Racing Broadcast
+"""Profile-aware configuration resolver for the GT Racing Broadcast
 toolkit (binary: racecast).
 
 Single source of truth for resolving which league ("profile") is active and
@@ -22,7 +22,27 @@ PROJECT_MARKERS = (".git", ".env.example")
 
 # Default OBS scene-collection name = product prefix + the league NAME, so several
 # leagues' collections group together in OBS. An explicit OBS_COLLECTION wins.
-PRODUCT_COLLECTION_PREFIX = "GT Endurance Racing"
+# Endurance (#308): endurance profiles group under "GT Racing Endurance".
+PRODUCT_COLLECTION_PREFIX = "GT Racing Endurance"
+
+# Solo (#303, #308): solo profiles group under "GT Racing Solo" so both endurance
+# and solo profiles are unified under the "GT Racing" product line.
+SOLO_COLLECTION_PREFIX = "GT Racing Solo"
+
+# Profile kind (#301): endurance = the classic feed-/sheet-driven league; solo =
+# a single-event commentary/POV broadcast (no external feeds, no Google Sheet).
+# A missing/unknown KIND resolves to endurance so every existing profile is
+# backwards-compatible. Solo profiles carry a starter TEMPLATE chosen at creation.
+DEFAULT_KIND = "endurance"
+KNOWN_KINDS = ("endurance", "solo")
+SOLO_TEMPLATES = ("commentary", "pov")
+
+
+def normalize_kind(raw):
+    """Fold a raw KIND value to a known kind: lowercased+trimmed, and anything
+    not in KNOWN_KINDS (including blank/None) falls back to DEFAULT_KIND. Pure."""
+    k = (raw or "").strip().lower()
+    return k if k in KNOWN_KINDS else DEFAULT_KIND
 
 
 def find_project_root(start, markers=PROJECT_MARKERS, max_levels=4):
@@ -151,6 +171,8 @@ class ResolvedConfig:
     profile: str
     name: str
     sheet_id: str
+    kind: str = DEFAULT_KIND     # endurance (default) | solo (#301)
+    template: str = ""           # solo starter template (commentary|pov); "" for endurance
     sheet_push_url: str = ""
     intro_url: str = ""
     outro_url: str = ""
@@ -205,16 +227,22 @@ def resolve_config(root, *, override=None, runtime_root=None, environ=None):
     if logo_path and not os.path.isfile(logo_path):
         logo_path = ""
     resolved_name = prof.get("NAME", name)
+    kind = normalize_kind(prof.get("KIND", ""))
     return ResolvedConfig(
         profile=name,
         name=resolved_name,
         sheet_id=prof.get("SHEET_ID", ""),
+        kind=kind,
+        template=prof.get("TEMPLATE", ""),
         sheet_push_url=prof.get("SHEET_PUSH_URL", ""),
         intro_url=prof.get("INTRO_URL", ""),
         outro_url=prof.get("OUTRO_URL", ""),
         trailer_url=prof.get("TRAILER_URL", ""),
         discord_webhook_url=prof.get("DISCORD_WEBHOOK_URL", ""),
-        obs_collection=prof.get("OBS_COLLECTION") or f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}",
+        obs_collection=prof.get("OBS_COLLECTION") or (
+            f"{SOLO_COLLECTION_PREFIX} — {resolved_name}"
+            if kind == "solo"
+            else f"{PRODUCT_COLLECTION_PREFIX} — {resolved_name}"),
         console_secret=prof.get("CONSOLE_SECRET", ""),
         discord_client_id=prof.get("DISCORD_CLIENT_ID", ""),
         discord_client_secret=prof.get("DISCORD_CLIENT_SECRET", ""),

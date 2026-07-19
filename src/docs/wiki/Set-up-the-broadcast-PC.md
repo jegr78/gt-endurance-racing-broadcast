@@ -327,12 +327,12 @@ localize and import the collection:
 ```bash
 racecast media       # Intro/Outro clips   -> runtime/<profile>/media/
 racecast graphics    # broadcast graphics  -> runtime/<profile>/graphics/
-racecast setup --out runtime/<profile>/GT_Endurance.import.json
+racecast setup --out runtime/<profile>/GT_Racing_Endurance.import.json
 ```
 
 > Replace `<profile>` with your active league's name (run `racecast profile show` if
 > unsure). `racecast setup` writes into the active profile's runtime dir, so the file
-> lands at `runtime/<profile>/GT_Endurance.import.json` — that's where the next step
+> lands at `runtime/<profile>/GT_Racing_Endurance.import.json` — that's where the next step
 > picks it up.
 
 > **In the Control Center:** **Assets → Download** fetches the graphics and media;
@@ -340,7 +340,7 @@ racecast setup --out runtime/<profile>/GT_Endurance.import.json
 
 Then in OBS: **Scene Collection → Import →** pick that file, and switch to it. The
 collection is named after your profile's `OBS_COLLECTION` (the convention is
-`GT Endurance Racing — <league>`), so several leagues can co-exist in OBS — switch the
+`GT Racing Endurance — <league>`), so several leagues can co-exist in OBS — switch the
 active league's collection later with `racecast obs collection set`. Don't move
 the folder afterwards. (Running `racecast setup` before the downloads also works — it only
 warns and OBS shows those sources black until the files exist.) The collection already

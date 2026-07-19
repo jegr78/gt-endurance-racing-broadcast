@@ -6,7 +6,7 @@ Works from the repo (src/) or the distributed package — same ./obs ./assets la
 
 Usage: python3 setup-assets.py [--out PATH] [--assets DIR] [--template FILE]
 """
-import argparse, json, os, sys
+import argparse, json, os, shutil, sys
 
 # Load the sibling decision helper (scripts/ sits next to this script in both
 # the repo and the package). setup-assets stays config.py-free, but discord_web
@@ -16,12 +16,24 @@ import discord_web  # noqa: E402
 import overlay_build  # noqa: E402  (pure stdlib helper — no heavy resolver pulled in)
 import placeholders  # noqa: E402  (pure stdlib helper — fills missing assets)
 
-POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]
+POV_SOURCE_NAME = overlay_build.OVERLAY_SLOT_OBS_SOURCES["pov"]["source"]
 
 ASSETS_TOKEN = "__RACECAST_ASSETS__"
 SHEET_TOKEN = "__RACECAST_SHEET__"
 MEDIA_TOKEN = "__RACECAST_MEDIA__"
 GRAPHICS_TOKEN = "__RACECAST_GRAPHICS__"
+
+SOLO_TEMPLATE_FILES = {"commentary": "GT_Racing_Solo_Commentary", "pov": "GT_Racing_Solo_POV"}
+
+
+def resolve_template_base(kind, template):
+    """Filename stem (no extension) of the OBS template for this profile kind.
+    endurance -> GT_Racing_Endurance; solo -> GT_Racing_Solo_Commentary / GT_Racing_Solo_POV
+    (unknown/blank solo template defaults to commentary). Pure."""
+    if (kind or "").strip().lower() == "solo":
+        return SOLO_TEMPLATE_FILES.get((template or "").strip().lower(),
+                                       "GT_Racing_Solo_Commentary")
+    return "GT_Racing_Endurance"
 
 
 def media_dir(base):
@@ -38,6 +50,33 @@ def graphics_dir(base):
     if os.path.basename(base) == "src":
         return os.path.join(os.path.dirname(base), "runtime", "graphics")
     return os.path.join(base, "graphics")
+
+
+def seed_committed_graphics(refs, graphics_dir, profile_graphics_dir):
+    """Seed committed per-profile graphics into the runtime graphics dir as a
+    fallback. For each expected ref MISSING from graphics_dir, copy it from
+    profile_graphics_dir when present there. Runtime (Sheet-downloaded) graphics
+    therefore win; a committed profile graphic (e.g. a demo Overlay.png) is used
+    only when nothing was downloaded. Returns the seeded basenames. Best-effort:
+    a copy error skips that file (same non-failing contract as fill_missing)."""
+    seeded = []
+    if not profile_graphics_dir or not os.path.isdir(profile_graphics_dir):
+        return seeded
+    for name in refs:
+        if name != os.path.basename(name):
+            continue                   # defense-in-depth: reject any traversing/absolute name
+        if os.path.exists(os.path.join(graphics_dir, name)):
+            continue
+        src = os.path.join(profile_graphics_dir, name)
+        if not os.path.isfile(src) or os.path.islink(src):
+            continue                   # skip a symlinked source (could point outside the profile)
+        try:
+            os.makedirs(graphics_dir, exist_ok=True)
+            shutil.copyfile(src, os.path.join(graphics_dir, name))
+            seeded.append(name)
+        except OSError:
+            pass  # best-effort seed; a missing dir/perm just falls through to fill_missing
+    return seeded
 
 
 # ---- Discord interview audio: one logical source, per-platform realization.
@@ -96,6 +135,87 @@ def localize_discord_audio(collection, platform, web=False, browser="Firefox"):
     return None
 
 
+# ---- Local capture/webcam devices (#303): one logical source per role, per-platform
+# realization — same model as the Discord audio source above. The committed templates
+# carry the macOS form; at localize time the OS is known, so the source id + settings
+# are rebuilt for this platform and the device id is injected from .env. An unset
+# device is a WARNING (OBS shows black), never a failure — same contract as a missing
+# graphic. #304 automates device discovery (OBS-WS) into .env.
+# NB: these names target the LEAF device sources, distinct from the wrapping scenes
+# of the same role ("Solo Capture" / "Solo Webcam") — mirroring the Discord precedent
+# (scene "Discord" wraps leaf "Discord Audio Capture"). A by-name lookup can therefore
+# never collide a device leaf with its wrapping scene.
+DEVICE_SOURCES = (
+    {"name": "Solo Capture Device", "env": "RACECAST_CAPTURE", "kind": "video"},
+    {"name": "Solo Webcam Device",  "env": "RACECAST_WEBCAM",  "kind": "video"},
+    {"name": "Commentary Mic Device", "env": "RACECAST_MIC",   "kind": "audio"},
+    {"name": "Solo Tyres Capture Device", "env": "RACECAST_TYRES_CAPTURE", "kind": "video"},
+)
+DEVICE_VARIANTS = {
+    "darwin": ("av_capture_input", "device"),        # AVFoundation device UID
+    "win":    ("dshow_input",      "video_device_id"),  # "Name:\\?\\usb#..."
+    "linux":  ("v4l2_input",       "device_id"),     # /dev/videoN
+}
+# Audio (mic) variant — same model as DEVICE_VARIANTS, one native input-capture kind
+# per OS, all keyed on "device_id" (cross-checked against obs_ws's audio device
+# property name by a test).
+AUDIO_VARIANTS = {
+    "darwin": ("coreaudio_input_capture", "device_id"),
+    "win":    ("wasapi_input_capture",    "device_id"),
+    "linux":  ("pulse_input_capture",     "device_id"),
+}
+
+
+def device_variant(platform):
+    """(source id, device-id settings key) for this platform, or None if unknown."""
+    if platform.startswith("win"):
+        return DEVICE_VARIANTS["win"]
+    if platform == "darwin":
+        return DEVICE_VARIANTS["darwin"]
+    if platform.startswith("linux"):
+        return DEVICE_VARIANTS["linux"]
+    return None
+
+
+def audio_variant(platform):
+    """(source id, device-id settings key) for this platform's mic input, or None
+    if unknown. Mirrors device_variant() but for AUDIO_VARIANTS."""
+    if platform.startswith("win"):
+        return AUDIO_VARIANTS["win"]
+    if platform == "darwin":
+        return AUDIO_VARIANTS["darwin"]
+    if platform.startswith("linux"):
+        return AUDIO_VARIANTS["linux"]
+    return None
+
+
+def localize_device_sources(collection, platform, env):
+    """Rebuild each DEVICE_SOURCES source's id/versioned_id/settings for `platform`,
+    injecting env[<entry.env>] (default '') into the per-OS device-id key. Video
+    entries use device_variant(); audio entries (the commentary mic) use
+    audio_variant(). Returns the names with an EMPTY device value (caller warns).
+    Absent source -> skipped. Unknown platform -> sources left as-is, all treated as
+    unset. Never raises (best-effort, same contract as localize_discord_audio)."""
+    env = env or {}
+    variant_fn = {"video": device_variant, "audio": audio_variant}
+    by_name = {s.get("name"): s for s in collection.get("sources", [])}
+    unset = []
+    for entry in DEVICE_SOURCES:
+        s = by_name.get(entry["name"])
+        if s is None:
+            continue
+        variant = variant_fn[entry.get("kind", "video")](platform)
+        value = (env.get(entry["env"]) or "").strip()
+        if variant is None or not value:
+            unset.append(entry["name"])
+        if variant is not None:
+            src_id, key = variant
+            s["id"] = src_id
+            s["versioned_id"] = src_id
+            s["settings"] = {key: value}
+    return unset
+
+
 def apply_collection_name(collection, name):
     """Set the OBS collection's top-level display name to `name` (the active
     profile's OBS_COLLECTION). Blank/None -> leave the template name untouched.
@@ -105,19 +225,26 @@ def apply_collection_name(collection, name):
     return collection
 
 
-def apply_pov_transform(collection, overrides):
-    """Set pos/bounds of EVERY scene item named POV_SOURCE_NAME ('Feed POV'),
-    anywhere in the collection tree, from `overrides` (a pov_box_from_css dict:
-    any subset of left/top/width/height). Unset keys keep the item's existing
-    value, so a partial override leaves the rest at the template base. No-op on
-    falsy `overrides`. Mutates and returns `collection` (same contract as
-    apply_collection_name / localize_discord_audio)."""
+def apply_box_transform(collection, source_name, overrides, scene=None):
+    """Set pos/bounds of scene items named `source_name` from `overrides` (a
+    box_from_css dict: any subset of left/top/width/height). Unset keys keep the
+    item's existing value, so a partial override leaves the rest at the template
+    base. No-op on falsy `overrides`. Mutates and returns `collection` (same
+    contract as apply_collection_name / localize_discord_audio).
+
+    `scene` scopes WHERE the item is matched:
+    - None (default): EVERY matching item anywhere in the tree — the POV
+      contract (Feed POV may appear in several scenes and all should track).
+    - a scene name: ONLY matching items inside that scene. The webcam uses this
+      so the transform hits the 'Solo Webcam' scene reference embedded in
+      'Program' (the item resized in OBS) and NEVER a same-named item that might
+      live in the standalone fullscreen 'Solo Webcam' scene."""
     if not overrides:
         return collection
 
     def visit(node):
         if isinstance(node, dict):
-            if (node.get("name") == POV_SOURCE_NAME
+            if (node.get("name") == source_name
                     and isinstance(node.get("pos"), dict)
                     and isinstance(node.get("bounds"), dict)):
                 if "left" in overrides:
@@ -134,8 +261,24 @@ def apply_pov_transform(collection, overrides):
             for v in node:
                 visit(v)
 
-    visit(collection)
+    if scene is None:
+        visit(collection)                     # whole tree (POV contract)
+    else:
+        # Only the named scene's own items — never other scene definitions, so a
+        # same-named item in a different scene (e.g. the standalone 'Solo Webcam'
+        # scene) is left untouched. A scene reference embedded in `scene` carries
+        # its pos/bounds on the item itself (not the referenced scene's body), so
+        # walking this scene's item list reaches exactly the resized instance.
+        for src in collection.get("sources", []):
+            if (isinstance(src, dict) and src.get("id") == "scene"
+                    and src.get("name") == scene):
+                visit(src.get("settings", {}).get("items"))
     return collection
+
+
+def apply_pov_transform(collection, overrides):
+    """Back-compat wrapper: apply_box_transform for POV_SOURCE_NAME ('Feed POV')."""
+    return apply_box_transform(collection, POV_SOURCE_NAME, overrides)
 
 
 def load_dotenv(start):
@@ -188,13 +331,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default=os.path.join(base, "assets"))
     ap.add_argument("--template", default=None)
-    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Endurance.import.json"))
+    ap.add_argument("--out", default=os.path.join(base, "obs", "GT_Racing_Endurance.import.json"))
     ap.add_argument("--media", default=media_dir(base),
                     help="Folder with intro.mp4/outro.mp4 for the Intro/Outro "
                          "scenes (replaces __RACECAST_MEDIA__). Default: media_dir().")
     ap.add_argument("--graphics", default=graphics_dir(base),
                     help="Folder with the broadcast graphics (<Label>.png) for the "
                          "image sources (replaces __RACECAST_GRAPHICS__). Default: graphics_dir().")
+    ap.add_argument("--profile-graphics", default=None,
+                    help="Committed per-profile graphics dir (profiles/<name>/graphics). Any "
+                         "expected graphic missing from --graphics is seeded from here as a "
+                         "fallback (runtime/downloaded graphics win). Used by demo profiles that "
+                         "ship a committed Overlay.png.")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID injected into the HUD browser source. "
                          "Default: env RACECAST_SHEET_ID (from the active profile).")
@@ -204,11 +352,19 @@ def main():
     ap.add_argument("--overlay-css", default=None,
                     help="Profile overlay hud.css whose #pov box position/size is "
                          "synced onto the OBS 'Feed POV' scene item. Default: none.")
+    ap.add_argument("--kind", default=os.environ.get("RACECAST_KIND", "endurance"),
+                    help="Profile kind (endurance|solo); selects the OBS template "
+                         "when --template is not an explicit file. Default: env "
+                         "RACECAST_KIND.")
+    ap.add_argument("--template-name",
+                    default=os.environ.get("RACECAST_TEMPLATE", ""),
+                    help="Solo template (commentary|pov). Default: env RACECAST_TEMPLATE.")
     a = ap.parse_args()
 
     tpl = a.template
     if tpl is None:
-        for cand in ("GT_Endurance.template.json", "GT_Endurance.json"):
+        stem = resolve_template_base(a.kind, a.template_name)
+        for cand in (f"{stem}.template.json", f"{stem}.json"):
             p = os.path.join(base, "obs", cand)
             if os.path.exists(p):
                 tpl = p
@@ -245,6 +401,10 @@ def main():
     if GRAPHICS_TOKEN in raw:
         mapping[GRAPHICS_TOKEN] = a.graphics
         refs = placeholders.expected_graphics_from_template(raw)
+        seeded = seed_committed_graphics(refs, a.graphics, a.profile_graphics)
+        if seeded:
+            print(f"  NOTE: seeded committed profile graphic(s) into {a.graphics}: "
+                  f"{', '.join(seeded)}")
         filled = placeholders.fill_missing(
             refs, a.graphics, placeholders.graphic_placeholder_path())
         if filled:
@@ -260,15 +420,22 @@ def main():
     browser = discord_web.resolve_browser(
         os.environ, discord_web.detect_running_browser() if web else None)
     swapped = localize_discord_audio(localized, sys.platform, web=web, browser=browser)
+    device_unset = localize_device_sources(localized, sys.platform, os.environ)
     apply_collection_name(localized, a.collection)
-    pov = {}
     if a.overlay_css and os.path.isfile(a.overlay_css):
+        css_text = ""
         try:
             with open(a.overlay_css, encoding="utf-8") as fh:
-                pov = overlay_build.pov_box_from_css(fh.read())
+                css_text = fh.read()
         except OSError as e:
             print(f"  NOTE: could not read overlay CSS {a.overlay_css}: {e}")
-        apply_pov_transform(localized, pov)
+        for slot_id, tgt in overlay_build.OVERLAY_SLOT_OBS_SOURCES.items():
+            box = overlay_build.box_from_css(css_text, slot_id)   # css_text read once
+            apply_box_transform(localized, tgt["source"], box,
+                                scene=tgt.get("export_scene"))
+            if box:
+                where = f" (scene '{tgt['export_scene']}')" if tgt.get("export_scene") else ""
+                print(f"  {slot_id} box synced to OBS '{tgt['source']}'{where}: {box}")
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(localized, fh, ensure_ascii=False, indent=4)
@@ -283,8 +450,6 @@ def main():
         print(f"  Graphics dir: {a.graphics}")
     if a.collection:
         print(f"  OBS collection name: {a.collection}")
-    if pov:
-        print(f"  POV box synced to OBS '{POV_SOURCE_NAME}': {pov}")
     if swapped:
         print(f"  Discord audio source: {swapped}")
         if web:
@@ -294,6 +459,10 @@ def main():
         print(f"  NOTE: no Discord audio variant for {sys.platform} — macOS form kept.")
     else:
         print("  WARNING: Discord audio source not found in the collection.")
+    if device_unset:
+        print("  WARNING: no device chosen for " + ", ".join(device_unset) +
+              " — set RACECAST_CAPTURE / RACECAST_WEBCAM in .env (OBS shows black "
+              "until a device is selected; racecast device-scan (#304) will fill these).")
     print(f"OBS: Scene Collection -> Import -> {a.out}")
     print("IMPORTANT: do NOT move this folder afterwards (OBS stores absolute paths).")
 

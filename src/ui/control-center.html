@@ -451,6 +451,14 @@
   .badge.lvl-green .dot { background: #2e7d32; }
   .badge.lvl-yellow .dot { background: #f9a825; }
   .badge.lvl-red .dot { background: #c62828; }
+  /* Kind-conditional UI (#307): a solo profile hides the feed/schedule surfaces
+     and reveals the solo-only device pickers. Endurance = no `.solo` class. */
+  body.solo [data-nav="streams"],
+  body.solo [data-view="streams"],
+  body.solo #home-feeds-row { display: none !important; }
+  #dev-head, #dev-section { display: none; }  /* solo-only; hidden for endurance */
+  body.solo #dev-head { display: flex; }
+  body.solo #dev-section { display: block; }
 </style>
 </head>
 <body>
@@ -627,7 +635,7 @@
           <div class="row"><span class="name">Race timer</span>
             <span class="badge" id="h-timer"><span class="dot"></span><span>…</span></span>
             <span class="dim grow" id="hd-timer"></span></div>
-          <div class="row"><span class="name">Feeds</span>
+          <div class="row" id="home-feeds-row"><span class="name">Feeds</span>
             <span class="dim grow" id="hd-feeds">start the relay for live stats</span></div>
         </section>
         <section class="tiles">
@@ -692,8 +700,19 @@
           <div class="viewhead"><h3>New profile</h3></div>
           <div class="row"><span class="name">Name</span>
             <input id="newprofile-name" placeholder="e.g. erf" aria-label="New profile name">
-            <span class="name">Copy from</span>
+            <span class="name">Kind</span>
+            <select id="newprofile-kind" aria-label="Profile kind"
+                    onchange="onKindChange()">
+              <option value="endurance">Endurance (feeds + Sheet)</option>
+              <option value="solo">Solo (local capture + webcam)</option>
+            </select>
+            <span class="name" id="newprofile-from-label">Copy from</span>
             <select id="newprofile-from" aria-label="Template to copy from"></select>
+            <span class="name" id="newprofile-template-label" hidden>Template</span>
+            <select id="newprofile-template" aria-label="Solo starter template" hidden>
+              <option value="commentary">Commentary</option>
+              <option value="pov">POV (driver)</option>
+            </select>
             <button onclick="newProfile()">
               <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create</button></div>
           <div class="enverr" id="newprofile-err" hidden></div>
@@ -986,6 +1005,39 @@
             Overlay Builder's font pickers. Add any other family by name above — it is downloaded once into
             <b>runtime/fonts/</b>. When a league's design uses a font, it is copied into that league's
             <b>overlay/fonts/</b> on save, so the overlay works offline and <b>profile export</b> stays self-contained.</p>
+        </section>
+        <div class="viewhead" id="dev-head"><h3>Solo devices</h3><span class="sub">webcam, capture-card, commentary mic &amp; tyres/fuel capture selection for solo mode</span>
+          <span class="spacer"></span>
+          <button onclick="loadDevices()">
+            <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Reload</button>
+          <button id="dev-save" onclick="saveDevices()">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>
+        <section id="dev-section">
+          <div class="enverr" id="dev-err" hidden></div>
+          <div class="row"><span class="name">Webcam</span>
+            <select id="dev-webcam" style="flex:1" aria-label="Webcam device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <div class="row"><span class="name">Capture</span>
+            <select id="dev-capture" style="flex:1" aria-label="Capture device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <div class="row"><span class="name">Mic</span>
+            <select id="dev-mic" style="flex:1" aria-label="Commentary mic device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <div class="row"><span class="name">Tyres/Fuel</span>
+            <select id="dev-tyres" style="flex:1" aria-label="Tyres/fuel capture device" disabled>
+              <option value="">—</option>
+            </select></div>
+          <p class="envhint" id="dev-hint">Loading devices…</p>
+          <div class="row" style="margin-top:12px"><span class="name">PlayStation IP (GT7)</span>
+            <input id="ps-ip" type="text" style="flex:1" placeholder="e.g. 192.168.1.42"
+                   aria-label="PlayStation IP">
+            <button id="ps-discover" onclick="discoverPs()">Discover PlayStation</button>
+            <button id="ps-save" onclick="savePsIp()">Save</button></div>
+          <select id="ps-list" style="width:100%;margin-top:6px" aria-label="Found consoles" hidden></select>
+          <p class="envhint" id="ps-hint">Set the console IP by hand, or click Discover (GT7 must be in an active session).</p>
         </section>
         <div class="enverr" id="env-err" hidden></div>
         <div class="envpath" id="env-path"></div>
@@ -1831,7 +1883,7 @@ const CONFIRM_TEXT = {
   'relay-stop': 'Stop the relay?',
   'streams-stop': 'Stop all static streams?',
   'event-stop': 'Stop the event? (stops the racecast services; OBS/Discord/Tailscale keep running)',
-  'obs-collection-set': 'Switch OBS to the GT Endurance Racing scene collection? This rebuilds all sources (incl. the relay feeds).',
+  'obs-collection-set': 'Switch OBS to the GT Racing Endurance scene collection? This rebuilds all sources (incl. the relay feeds).',
   'chat-clear': 'Clear all crew-chat messages? This cannot be undone.',
   'free-ports': 'Free the feed ports (53001–53003)? Kills any orphaned process holding them. A running relay or static stream is left untouched.',
   'kill-relay': 'Kill a stale relay? Frees the relay control port 8088 by killing the process holding it — use this when the relay is orphaned (unknown PID) and the Stop button can\'t reach it. A healthy, running relay is left untouched (use Stop Relay instead).'
@@ -2176,7 +2228,7 @@ function setCountBadge(key, n, noun) {
 
 // OBS scene-collection check (on-demand, live obs-websocket connect) for the
 // Apps view. Shows ✓ correct / ⚠ wrong, with a Switch button only when the
-// GT Endurance Racing collection is present to switch to.
+// GT Racing Endurance collection is present to switch to.
 async function fetchObsCollection() {
   const el = $('obscoll');
   if (!el) return;
@@ -2467,6 +2519,7 @@ async function loadSettings(force) {
   if (force && !(await confirmModal('Reload from disk and discard any unsaved edits?'))) return;
   $('env-err').hidden = true;
   loadFontLibrary();                       // machine-wide overlay font library
+  loadDevices();                           // solo-mode webcam/capture pickers
   let d;
   try { d = await (await fetch('/api/env', {cache: 'no-store'})).json(); }
   catch (e) { showEnvErr('Control Center not reachable.'); return; }
@@ -2475,6 +2528,122 @@ async function loadSettings(force) {
   const c = $('envrows');
   c.textContent = '';
   d.entries.forEach(e => c.appendChild(settingsRow(e.key, e.value)));
+}
+
+// ----- Solo devices (General Settings): webcam + capture-card + mic pickers -----
+// Webcam/Capture share the same OBS video-device list (the "Solo Capture Device"
+// input enumerates whatever this platform's video-capture API sees); Mic has its
+// own audio-device list (#307, the "Commentary Mic Device" input). A blank
+// selection on Save leaves that .env key untouched.
+function deviceOption(name, value) {
+  const o = document.createElement('option');
+  o.value = value; o.textContent = name;
+  return o;
+}
+
+async function loadDevices() {
+  $('dev-err').hidden = true;
+  const wSel = $('dev-webcam'), cSel = $('dev-capture'), mSel = $('dev-mic'), tSel = $('dev-tyres');
+  let d;
+  try { d = await (await fetch('/api/devices', {cache: 'no-store'})).json(); }
+  catch (e) {
+    wSel.disabled = cSel.disabled = mSel.disabled = tSel.disabled = true;
+    $('dev-hint').textContent = 'Control Center not reachable.';
+    return;
+  }
+  const devices = (d && d.devices) || [];
+  const mics = (d && d.mic) || [];
+  wSel.textContent = ''; cSel.textContent = ''; mSel.textContent = ''; tSel.textContent = '';
+  wSel.appendChild(deviceOption('—', ''));
+  cSel.appendChild(deviceOption('—', ''));
+  mSel.appendChild(deviceOption('—', ''));
+  tSel.appendChild(deviceOption('—', ''));
+  devices.forEach(dev => {
+    wSel.appendChild(deviceOption(dev.name, dev.value));
+    cSel.appendChild(deviceOption(dev.name, dev.value));
+    tSel.appendChild(deviceOption(dev.name, dev.value));   // tyres/fuel = a 2nd video capture
+  });
+  mics.forEach(dev => mSel.appendChild(deviceOption(dev.name, dev.value)));
+  const ok = !!(d && d.ok) && devices.length > 0;
+  const micOk = mics.length > 0;
+  wSel.disabled = cSel.disabled = tSel.disabled = !ok;
+  mSel.disabled = !micOk;
+  $('dev-hint').textContent = ok
+    ? 'Pick the webcam, capture-card, mic and/or tyres/fuel device, then Save. Shared machine-wide (not per-league).'
+    : ((d && d.note) || 'Start OBS with obs-websocket enabled to list devices, or set '
+       + 'RACECAST_CAPTURE/RACECAST_WEBCAM/RACECAST_MIC/RACECAST_TYRES_CAPTURE in the .env editor below.');
+}
+
+async function saveDevices() {
+  $('dev-err').hidden = true;
+  const b = $('dev-save');
+  b.disabled = true;
+  let d;
+  try {
+    d = await (await fetch('/api/devices/select', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({webcam: $('dev-webcam').value,
+                              capture: $('dev-capture').value,
+                              mic: $('dev-mic').value,
+                              tyres: $('dev-tyres').value})})).json();
+  } catch (e) {
+    $('dev-err').textContent = 'Control Center not reachable.'; $('dev-err').hidden = false;
+    b.disabled = false; return;
+  }
+  if (!d.ok) {
+    $('dev-err').textContent = d.error || 'could not save device selection';
+    $('dev-err').hidden = false; b.disabled = false; return;
+  }
+  const orig = b.innerHTML;
+  b.textContent = 'Saved ✓';
+  setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 1400);
+  // selection persisted; keep it shown (do not reload → would reset the dropdowns)
+}
+
+// ----- PlayStation (GT7 console) discovery -----
+async function discoverPs(){
+  const hint = document.getElementById('ps-hint');
+  const list = document.getElementById('ps-list');
+  const btn = document.getElementById('ps-discover');
+  btn.disabled = true; hint.textContent = 'Scanning the LAN for GT7…';
+  try{
+    const r = await fetch('/api/ps/discover', {method:'POST'});
+    const d = await r.json();
+    const consoles = d.consoles || [];
+    list.replaceChildren();                 // clear any stale list from a prior scan
+    if(!consoles.length){ list.hidden = true; hint.textContent = d.note || 'No PlayStation found.'; return; }
+    if(consoles.length === 1){
+      list.hidden = true;
+      document.getElementById('ps-ip').value = consoles[0];
+      hint.textContent = d.from_relay
+        ? 'Using the console the running relay already latched. Click Save to pin it.'
+        : 'Found one console. Click Save to write it to .env.';
+    } else {
+      list.hidden = false;
+      consoles.forEach(ip => {              // build options via the DOM (no innerHTML)
+        const o = document.createElement('option'); o.value = ip; o.textContent = ip;
+        list.appendChild(o);
+      });
+      document.getElementById('ps-ip').value = consoles[0];
+      list.onchange = () => { document.getElementById('ps-ip').value = list.value; };
+      hint.textContent = 'Multiple consoles found — pick one, then Save.';
+    }
+  }catch(e){ list.hidden = true; list.replaceChildren(); hint.textContent = 'Discovery failed: ' + e; }
+  finally{ btn.disabled = false; }
+}
+async function savePsIp(){
+  const hint = document.getElementById('ps-hint');
+  const ip = document.getElementById('ps-ip').value.trim();
+  if(!ip){ hint.textContent = 'Enter or discover a PlayStation IP first.'; return; }
+  try{
+    const r = await fetch('/api/ps/save', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ip})});
+    const d = await r.json();
+    hint.textContent = d.ok
+      ? 'Saved RACECAST_GT7_PS_IP — restart the relay to apply.'
+      : ('Could not save: ' + (d.error || 'unknown error'));
+    if(d.ok && typeof loadSettings === 'function'){ loadSettings(); }  // refresh the .env editor (no force = no discard-edits confirm)
+  }catch(e){ hint.textContent = 'Save failed: ' + e; }
 }
 
 // ----- Machine-wide overlay font library (General Settings) -----
@@ -2773,6 +2942,18 @@ async function loadProfiles(force) {
   loadCrew();                             // Crew editor for the active profile
   loadBackups();                          // Looks card for the active profile
   fetchAssetFiles();                      // graphics/media gallery for the active profile
+  applyKindGating(d);
+}
+
+function applyKindGating(data) {
+  // Reflect the ACTIVE profile's kind onto <body> so kind-specific CSS can
+  // hide feed surfaces / reveal solo controls. Endurance = no class.
+  let kind = 'endurance';
+  if (data && data.ok && Array.isArray(data.profiles)) {
+    const a = data.profiles.find(p => p.name === data.active);
+    if (a && a.kind) kind = a.kind;
+  }
+  document.body.classList.toggle('solo', kind === 'solo');
 }
 
 async function useProfile(name) {
@@ -2800,15 +2981,28 @@ async function useProfile(name) {
   offerRestart();                         // running services still serve the old league
 }
 
+function onKindChange() {
+  const solo = $('newprofile-kind').value === 'solo';
+  // Solo generates a fresh sheet-less profile — Copy-from is not applicable
+  // (the CLI forbids --from with --kind solo).
+  $('newprofile-template').hidden = !solo;
+  $('newprofile-template-label').hidden = !solo;
+  $('newprofile-from').hidden = solo;
+  $('newprofile-from-label').hidden = solo;
+}
+
 async function newProfile() {
   const name = $('newprofile-name').value.trim();
-  const from = $('newprofile-from').value;
+  const kind = $('newprofile-kind').value;
+  const solo = kind === 'solo';
+  const from = solo ? null : $('newprofile-from').value;
+  const template = solo ? $('newprofile-template').value : null;
   if (!name) { showProfileErr('newprofile-err', 'Enter a profile name.'); return; }
   let d;
   try {
     d = await (await fetch('/api/profile/new', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name, from})})).json();
+        body: JSON.stringify({name, from, kind, template})})).json();
   } catch (e) { showProfileErr('newprofile-err', 'Control Center not reachable.'); return; }
   if (!d.ok) { showProfileErr('newprofile-err', d.error || 'could not create profile'); return; }
   $('newprofile-err').hidden = true;
@@ -4572,6 +4766,7 @@ setInterval(renderTimer, 1000);          // tick the Home race-timer clock local
 checkUpdate();                           // one-shot GitHub release check (cached server-side)
 // Populate the active-league sidebar badge regardless of which view opens first.
 profilesLoaded = true; loadProfiles();
+onKindChange();                          // derive the new-profile dialog's Template/Copy-from visibility from the Kind select (not just static hidden attrs)
 initPreviewOptin();                      // restore preview opt-in state from localStorage
 // Populate the Home tiles on startup: preflight auto-runs (a few seconds), and
 // the cheap asset listing fills the Assets tile + gallery.

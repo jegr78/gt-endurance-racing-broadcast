@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "epic/**"]   # gate sub-PRs targeting a long-lived epic branch
 
 permissions:
   contents: read

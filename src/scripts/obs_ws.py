@@ -44,19 +44,19 @@ POV_SOURCE = "Feed POV"                      # the Stint-scene driver-POV PiP sc
 FEED_SOURCES = {"A": "Feed A", "B": "Feed B"}   # scene-item name == audio input name
 
 # The scene collection the broadcast assumes. Mirrors the "name" field of
-# src/obs/GT_Endurance.json (the name OBS shows after importing the localized
+# src/obs/GT_Racing_Endurance.json (the name OBS shows after importing the localized
 # collection). Keep the two in sync. Not a secret, so the no-hardcoding rule
 # does not apply; not parsed at runtime because the file is renamed + tokenized
 # in the shipped package and bundled differently when frozen.
-EXPECTED_SCENE_COLLECTION = "GT Endurance Racing"
+EXPECTED_SCENE_COLLECTION = "GT Racing Endurance"
 
 
 def scene_collection_status(current, available, expected=EXPECTED_SCENE_COLLECTION):
     """Pure: classify the active OBS scene collection. `current` is OBS's
     currentSceneCollectionName; `available` is the full list it reported.
     Returns a dict (see keys below). The only "correct" state is match=True;
-    renamed_variant flags a non-exact "GT Endurance Racing*" (e.g. an import-renamed
-    'GT Endurance Racing 2'), which we never switch to automatically."""
+    renamed_variant flags a non-exact "GT Racing Endurance*" (e.g. an import-renamed
+    'GT Racing Endurance 2'), which we never switch to automatically."""
     available = list(available)
     # A correct collection wins: never flag a renamed variant when we already match.
     renamed = None if current == expected else next(
@@ -657,6 +657,166 @@ def probe(host="127.0.0.1", port=None, password=None, timeout=2.0):
         return False, note
     session.close()
     return True, ""
+
+
+DEVICE_PROPERTY_NAMES = {"darwin": "device", "win": "video_device_id", "linux": "device_id"}
+# Audio (mic) device property — "device_id" on every OS. MUST match
+# setup-assets.AUDIO_VARIANTS (cross-checked by a test) — enumeration writes into
+# the same field localization later reads.
+AUDIO_DEVICE_PROPERTY_NAMES = {"darwin": "device_id", "win": "device_id", "linux": "device_id"}
+
+
+def device_property_name(platform, kind="video"):
+    """OBS input-settings property key holding the device id for `platform`, or
+    None if unknown. kind="video" (default) MUST match setup-assets.DEVICE_VARIANTS;
+    kind="audio" MUST match setup-assets.AUDIO_VARIANTS (both cross-checked by a
+    test) — enumeration writes into the same field localization later reads."""
+    names = AUDIO_DEVICE_PROPERTY_NAMES if kind == "audio" else DEVICE_PROPERTY_NAMES
+    if platform.startswith("win"):
+        return names["win"]
+    if platform == "darwin":
+        return names["darwin"]
+    if platform.startswith("linux"):
+        return names["linux"]
+    return None
+
+
+# Platform capture-input kinds, as OBS reports them in GetInputKindList. Matched by
+# substring (macOS reports av_capture_input_v2, so an exact-string match would miss it)
+# and tried in this order — a preferred matcher wins over a later one regardless of the
+# order OBS lists the kinds in. macOS is live-validated; Windows/Linux go through the
+# same mechanism (documented cross-platform assumption, see the design spec).
+VIDEO_INPUT_KIND_MATCHERS = ("av_capture_input", "dshow_input", "v4l2_input")
+AUDIO_INPUT_KIND_MATCHERS = ("coreaudio_input_capture", "wasapi_input_capture",
+                             "pulse_input_capture")
+
+# Throwaway names for the device-enumeration probe (temp scene + disabled temp inputs;
+# never appear in program output; always removed after the probe).
+PROBE_SCENE_NAME = "__racecast_device_probe__"
+PROBE_VIDEO_INPUT = "__racecast_probe_video__"
+PROBE_MIC_INPUT = "__racecast_probe_mic__"
+
+
+def pick_input_kind(kind_list, matchers):
+    """First kind in `kind_list` whose lowercased value contains a `matchers`
+    substring. Honors matcher order first (a preferred matcher wins even if a
+    less-preferred kind appears earlier in `kind_list`), then list order. Returns
+    None if nothing matches or `kind_list` is not a list/tuple. Case-insensitive."""
+    if not isinstance(kind_list, (list, tuple)):
+        return None
+    lowered = [(k, str(k).lower()) for k in kind_list]
+    for sub in matchers:
+        needle = sub.lower()
+        for original, low in lowered:
+            if needle in low:
+                return original
+    return None
+
+
+def parse_property_items(payload):
+    """[{name,value,enabled}] from a GetInputPropertiesListPropertyItems response,
+    dropping items with an empty/None itemValue. Tolerant: bad shape -> []."""
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("propertyItems")
+    if not isinstance(items, list):
+        return []
+    out = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        val = it.get("itemValue")
+        if val is None or val == "":
+            continue
+        out.append({"name": it.get("itemName", ""), "value": val,
+                    "enabled": bool(it.get("itemEnabled", True))})
+    return out
+
+
+def probe_device_options(host="127.0.0.1", port=None, password=None, timeout=2.0):
+    """Enumerate the local video-capture and microphone devices OBS offers, WITHOUT
+    any solo collection imported — exactly what OBS shows when you add a capture
+    source by hand. Opens one session, creates a throwaway scene plus a disabled
+    temp input of the platform capture kind, reads its device dropdown, then removes
+    both. Returns {"devices": [...], "note": str, "mic": [...], "mic_note": str}
+    (each list is [{name, value, enabled}] from parse_property_items).
+
+    Best-effort like release_feed_inputs: OBS unreachable / no capture kind /
+    protocol surprise -> empty list(s) + a human-readable note, NEVER raises. The
+    throwaway scene + inputs are ALWAYS removed (finally), including mid-probe, and
+    the current program scene is never switched (the temp input is created disabled).
+
+    Concurrency: the probe uses FIXED scene/input names, so two probes running at
+    once (e.g. a Control Center /api/devices poll and a CLI device-scan) contend on
+    the same throwaway objects — the loser degrades to an empty list + note. That is
+    the deliberate trade-off of fixed names: the blast radius is confined to the
+    throwaway scene (never the real collection, never the program), nothing is left
+    permanently leaked (the next probe's pre-clear RemoveScene reclaims any straggler),
+    and it still never raises."""
+    session, note = _connect(host, port, password, timeout)
+    if session is None:
+        return {"devices": [], "note": note, "mic": [], "mic_note": note}
+    out = {"devices": [], "note": "", "mic": [], "mic_note": ""}
+    created = []
+    scene_made = False
+
+    def read_options(input_name, kind, prop):
+        # Track for cleanup BEFORE CreateInput: if OBS creates the input but the
+        # response is lost mid-exchange, the finally still attempts RemoveInput
+        # (a RemoveInput for a never-created input is harmless — it is guarded).
+        created.append(input_name)
+        try:
+            session.request("CreateInput", {"sceneName": PROBE_SCENE_NAME,
+                                            "inputName": input_name, "inputKind": kind,
+                                            "sceneItemEnabled": False})
+            payload = session.request("GetInputPropertiesListPropertyItems",
+                                      {"inputName": input_name, "propertyName": prop})
+            return parse_property_items(payload), ""
+        except Exception as exc:                     # noqa: BLE001 — best-effort contract
+            return [], (str(exc) or exc.__class__.__name__)
+
+    try:
+        kinds = session.request("GetInputKindList", {}).get("inputKinds", [])
+        vid_kind = pick_input_kind(kinds, VIDEO_INPUT_KIND_MATCHERS)
+        aud_kind = pick_input_kind(kinds, AUDIO_INPUT_KIND_MATCHERS)
+        try:                                         # clear a stale scene from a crash
+            session.request("RemoveScene", {"sceneName": PROBE_SCENE_NAME})
+        except Exception:                            # noqa: BLE001 — best-effort contract
+            pass
+        session.request("CreateScene", {"sceneName": PROBE_SCENE_NAME})
+        scene_made = True
+        # device_property_name(...) can be None on an unknown platform, but read_options
+        # is only reached when vid_kind/aud_kind is truthy — and the kind matchers also
+        # return None on an unknown platform, so a None property never reaches OBS. Keep
+        # that invariant if you ever add a matcher for an exotic platform.
+        if vid_kind:
+            out["devices"], out["note"] = read_options(
+                PROBE_VIDEO_INPUT, vid_kind, device_property_name(sys.platform))
+        else:
+            out["note"] = "no video capture input kind in this OBS"
+        if aud_kind:
+            out["mic"], out["mic_note"] = read_options(
+                PROBE_MIC_INPUT, aud_kind,
+                device_property_name(sys.platform, kind="audio"))
+        else:
+            out["mic_note"] = "no audio capture input kind in this OBS"
+    except Exception as exc:                         # noqa: BLE001 — best-effort contract
+        reason = str(exc) or exc.__class__.__name__
+        out["note"] = out["note"] or reason
+        out["mic_note"] = out["mic_note"] or reason
+    finally:
+        for name in created:
+            try:
+                session.request("RemoveInput", {"inputName": name})
+            except Exception:                        # noqa: BLE001 — best-effort contract
+                pass
+        if scene_made:
+            try:
+                session.request("RemoveScene", {"sceneName": PROBE_SCENE_NAME})
+            except Exception:                        # noqa: BLE001 — best-effort contract
+                pass
+        session.close()
+    return out
 
 
 def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,

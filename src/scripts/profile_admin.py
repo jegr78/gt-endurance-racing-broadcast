@@ -15,8 +15,8 @@ import config as cfg   # sibling in src/scripts (sys.path injected by racecast.p
 
 PROFILE_VERBS = ("list", "show", "use", "new", "export", "import")
 _USAGE = ("usage: racecast profile {list | show [<name>] | use <name> [--force] | "
-          "new <name> [--from <source>] | export <name> [--no-assets] [--out PATH] | "
-          "import <file> [--force]}")
+          "new <name> [--from <source>] [--kind endurance|solo] [--template commentary|pov] | "
+          "export <name> [--no-assets] [--out PATH] | import <file> [--force]}")
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -65,7 +65,8 @@ def parse_profile_args(rest):
         raise ValueError(_USAGE)
     verb, args = rest[0], rest[1:]
     out = {"verb": verb, "name": None, "source": "example",
-           "no_assets": False, "out": None, "file": None, "force": False}
+           "no_assets": False, "out": None, "file": None, "force": False,
+           "kind": cfg.DEFAULT_KIND, "template": None}
     if verb == "list":
         if args:
             raise ValueError(_USAGE)
@@ -90,6 +91,7 @@ def parse_profile_args(rest):
         if not args:
             raise ValueError(_USAGE)
         out["name"] = args[0]
+        from_given = False
         toks = list(args[1:])
         while toks:
             t = toks.pop(0)
@@ -97,13 +99,43 @@ def parse_profile_args(rest):
                 if not toks:
                     raise ValueError("--from requires a profile name")
                 out["source"] = toks.pop(0)
+                from_given = True
             elif t.startswith("--from="):
                 src = t.split("=", 1)[1]
                 if not src:
                     raise ValueError("--from requires a profile name")
                 out["source"] = src
+                from_given = True
+            elif t == "--kind":
+                if not toks:
+                    raise ValueError("--kind requires a value")
+                out["kind"] = toks.pop(0)
+            elif t.startswith("--kind="):
+                out["kind"] = t.split("=", 1)[1]
+            elif t == "--template":
+                if not toks:
+                    raise ValueError("--template requires a value")
+                out["template"] = toks.pop(0)
+            elif t.startswith("--template="):
+                out["template"] = t.split("=", 1)[1]
             else:
                 raise ValueError(_USAGE)
+        if out["kind"] not in cfg.KNOWN_KINDS:
+            raise ValueError(
+                f"--kind must be one of: {', '.join(cfg.KNOWN_KINDS)}")
+        if out["template"] is not None and out["template"] not in cfg.SOLO_TEMPLATES:
+            raise ValueError(
+                f"--template must be one of: {', '.join(cfg.SOLO_TEMPLATES)}")
+        if out["kind"] == "solo":
+            if from_given:
+                raise ValueError("--from cannot be combined with --kind solo "
+                                 "(a solo profile is scaffolded, not copied)")
+            # a solo profile always carries a starter template; default to the
+            # first one when the operator did not pick one explicitly.
+            if out["template"] is None:
+                out["template"] = cfg.SOLO_TEMPLATES[0]
+        elif out["template"] is not None:
+            raise ValueError("--template is only valid with --kind solo")
     elif verb == "export":
         if not args:
             raise ValueError(_USAGE)
@@ -162,12 +194,68 @@ def split_profile_flag(argv):
     return out, name
 
 
-def create_profile(root, name, source="example"):
-    """Copy profiles/<source>/ -> profiles/<slug>/ and return the new dir path.
-    The typed `name` may contain spaces/capitals (e.g. "Demo League"): it is slugged
-    for the directory ("demo-league") and kept verbatim as the league display NAME in
-    the new profile.env. Raises ValueError when the name has no sluggable
-    characters, the slug is reserved/already exists, or the source is missing."""
+def _solo_profile_env_text(display, template):
+    """The generated profile.env for a solo profile (#301): a single-event
+    commentary/POV broadcast whose main program is a local capture card + webcam
+    (no A/B stint feeds), carrying the chosen starter TEMPLATE. Sheet-always
+    (#302 design): a solo profile still uses a Google Sheet — the same tabs as
+    endurance MINUS the Schedule/Qualifying tabs — so it carries SHEET_ID. The
+    matching OBS scene-collection source is materialized by `racecast setup` (#303)."""
+    return (
+        "# Solo profile (kind=solo) — a single-event commentary/POV broadcast.\n"
+        "# The main program is a local capture card + webcam in OBS (no A/B stint\n"
+        "# feeds). It still uses a Google Sheet (below). Created by `racecast profile new`.\n"
+        "\n"
+        "# Display name shown in the CLI / Control Center / docs.\n"
+        f"NAME={display}\n"
+        "\n"
+        "# Profile kind: solo (vs. the classic feed-/sheet-driven `endurance`).\n"
+        "KIND=solo\n"
+        "\n"
+        "# Starter template chosen at creation: commentary | pov. The matching OBS\n"
+        "# scene-collection source is materialized by `racecast setup` (#303).\n"
+        f"TEMPLATE={template}\n"
+        "\n"
+        "# Google Sheet that drives the HUD, timer, crew/console roles, broadcast\n"
+        "# chat and assets (the long ID from the sheet URL). A solo Sheet uses the\n"
+        "# same tabs as endurance MINUS the Schedule/Qualifying tabs.\n"
+        "SHEET_ID=\n"
+        "\n"
+        "# OPTIONAL: sheet-write webhook (Apps Script /exec URL incl. its ?key=...)\n"
+        "# enabling the Director Panel's Setup/POV write-back + the race timer.\n"
+        "SHEET_PUSH_URL=\n"
+        "\n"
+        "# OPTIONAL: the OBS scene-collection name this profile uses. Blank = the\n"
+        "# product default per kind.\n"
+        "OBS_COLLECTION=\n"
+        "\n"
+        "# OPTIONAL: a logo image (path relative to this profile dir), shown next\n"
+        "# to the profile name in the Control Center sidebar.\n"
+        "LOGO=\n"
+        "\n"
+        "# OPTIONAL: a free-text event title shown in the Director Panel and every\n"
+        "# Discord message (e.g. \"GT Racing - Round 4 - Le Mans\").\n"
+        "EVENT_TITLE=\n"
+        "\n"
+        "# OPTIONAL: per-console secret. Auto-provisioned on first relay start;\n"
+        "# travels with `profile export`. Leave blank. Treat it like a password.\n"
+        "CONSOLE_SECRET=\n"
+    )
+
+
+def create_profile(root, name, source="example", kind=cfg.DEFAULT_KIND,
+                   template=None):
+    """Create profiles/<slug>/ and return the new dir path. The typed `name` may
+    contain spaces/capitals (e.g. "Demo League"): it is slugged for the directory
+    ("demo-league") and kept verbatim as the league display NAME.
+
+    kind == "endurance" (default): copy profiles/<source>/ verbatim.
+    kind == "solo" (#301): generate a fresh, sheet-less profile.env carrying the
+    chosen starter `template` (default: the first SOLO_TEMPLATES entry) — no
+    `source` is copied.
+
+    Raises ValueError when the name has no sluggable characters, the slug is
+    reserved/already exists, or (endurance) the source is missing."""
     slug = slugify(name)
     if not valid_profile_name(slug):
         raise ValueError(f"invalid profile name {name!r} (needs at least one "
@@ -178,6 +266,13 @@ def create_profile(root, name, source="example"):
     target = os.path.join(pdir, slug)
     if os.path.exists(target):
         raise ValueError(f"profile {slug!r} already exists ({target})")
+    if kind == "solo":
+        os.makedirs(target)
+        with open(os.path.join(target, cfg.PROFILE_ENV_NAME),
+                  "w", encoding="utf-8") as fh:
+            fh.write(_solo_profile_env_text(
+                _display_name(name), template or cfg.SOLO_TEMPLATES[0]))
+        return target
     src = os.path.join(pdir, source)
     if not os.path.isfile(os.path.join(src, cfg.PROFILE_ENV_NAME)):
         raise ValueError(

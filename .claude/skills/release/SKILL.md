@@ -1,9 +1,9 @@
 ---
 name: release
-description: Cut and publish a GT Endurance Racing release end-to-end — local gates, release-please version control, Release PR merge, binary watch. Use when the user wants to release a version (e.g. "release 1.1.0", "cut the next release", "merge the release PR").
+description: Cut and publish a GT Racing Broadcast release end-to-end — local gates, release-please version control, Release PR merge, binary watch. Use when the user wants to release a version (e.g. "release 1.1.0", "cut the next release", "merge the release PR").
 ---
 
-# GT Endurance Racing Release
+# GT Racing Broadcast Release
 
 Drives the repo's release-please flow from local verification to published
 binaries. The release pipeline and its failure modes are documented here so no

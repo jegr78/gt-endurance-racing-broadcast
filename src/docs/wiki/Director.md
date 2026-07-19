@@ -58,6 +58,20 @@ IP, port, or password is needed in the browser. HUD and URLs additionally need
 the sheet-write webhook (see [Sheet-Webhook](Sheet-Webhook)); without it they
 are display-only.
 
+### Solo mode
+
+For a **solo** profile (a single-race commentary or driver-POV broadcast — local
+capture + webcam, no A/B feeds) the panel adapts automatically: the FEEDS bus,
+the A/B feed pills and preview tiles, the stint schedule and the qualifying
+editor are hidden, and the POV editor stands on its own card with its own POV
+RELOAD / POV STOP. The OBS control busses retarget to the solo scene collection —
+SCN·VIS switches `PROGRAM` / `INTERVIEW` / `STANDBY` / `INTERMISSION` / `INTRO` /
+`OUTRO` / `DISCORD` and toggles the `WEBCAM` and `POV` picture-in-picture, and the
+AUDIO bus exposes the solo mixer: **Game**, **Webcam**, **Mic** (the commentator's
+microphone on the producer machine), **POV**, **Discord** and **Intermission**.
+
+![The Director Panel in solo mode — feed/schedule controls hidden, solo scene switches, the Game/Webcam/Mic/POV audio mixer, and the POV editor with its own reload/stop](images/director-panel-solo.png)
+
 > **"Race Control" here is the on-screen HUD banner** (the `RED FLAG`/`Driver Swaps`
 > dropdown you set, written to the Setup tab) — **not** the read-only
 > [Race Control monitoring desk](Console#race-control-read-only-monitoring-desk) crew

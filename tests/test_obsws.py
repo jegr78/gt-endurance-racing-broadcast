@@ -438,6 +438,40 @@ def _fake_obs_server(server_sock, password, state):
         elif rtype == "SetStreamServiceSettings":
             state.setdefault("service_settings", []).append(rdata)
             resp = {}
+        elif rtype == "GetInputKindList":
+            resp = {"inputKinds": state.get("input_kinds",
+                    ["image_source", "av_capture_input_v2", "coreaudio_input_capture"])}
+        elif rtype == "CreateScene":
+            state.setdefault("created_scenes", []).append(rdata["sceneName"])
+            resp = {}
+        elif rtype == "RemoveScene":
+            state.setdefault("removed_scenes", []).append(rdata["sceneName"])
+            resp = {}
+        elif rtype == "CreateInput":
+            state.setdefault("created_inputs", []).append(
+                (rdata["sceneName"], rdata["inputName"], rdata["inputKind"],
+                 rdata.get("sceneItemEnabled")))
+            if state.get("create_raises"):      # OBS created it, but the response fails
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 604},
+                    "responseData": {}}})
+                continue
+            resp = {}
+        elif rtype == "RemoveInput":
+            state.setdefault("removed_inputs", []).append(rdata["inputName"])
+            resp = {}
+        elif rtype == "GetInputPropertiesListPropertyItems":
+            state.setdefault("prop_reads", []).append(
+                (rdata["inputName"], rdata["propertyName"]))
+            if state.get("prop_raises"):
+                _srv_send_json(conn, {"op": 7, "d": {
+                    "requestType": rtype, "requestId": rid,
+                    "requestStatus": {"result": False, "code": 604},
+                    "responseData": {}}})
+                continue
+            table = state.get("prop_items", {})
+            resp = {"propertyItems": table.get(rdata["propertyName"], [])}
         else:
             resp = {}
         _srv_send_json(conn, {"op": 7, "d": {
@@ -654,20 +688,20 @@ def _start_fake_obs(state, password="supersecret"):
 
 
 def t_get_scene_collection_reads_current_and_list():
-    state = {"released": [], "current_collection": "GT Endurance Racing",
-             "collections": ["GT Endurance Racing", "Other"]}
+    state = {"released": [], "current_collection": "GT Racing Endurance",
+             "collections": ["GT Racing Endurance", "Other"]}
     port, srv = _start_fake_obs(state)
     status, note = m.get_scene_collection(port=port, password="supersecret", timeout=5)
     assert note == "", note
-    assert status["current"] == "GT Endurance Racing"
+    assert status["current"] == "GT Racing Endurance"
     assert status["match"] is True
-    assert status["available"] == ["GT Endurance Racing", "Other"]
+    assert status["available"] == ["GT Racing Endurance", "Other"]
     srv.close()
 
 
 def t_get_scene_collection_honors_custom_expected():
     state = {"released": [], "current_collection": "ERF Endurance",
-             "collections": ["ERF Endurance", "GT Endurance Racing"]}
+             "collections": ["ERF Endurance", "GT Racing Endurance"]}
     port, srv = _start_fake_obs(state)
     status, note = m.get_scene_collection(port=port, password="supersecret",
                                           timeout=5, expected="ERF Endurance")
@@ -687,17 +721,17 @@ def t_get_scene_collection_unreachable_is_quiet():
 
 def t_set_scene_collection_switches_when_present_and_different():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["GT Endurance Racing", "Other"]}
+             "collections": ["GT Racing Endurance", "Other"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True, note
-    assert state["set_collection"] == "GT Endurance Racing"
+    assert state["set_collection"] == "GT Racing Endurance"
     srv.close()
 
 
 def t_set_scene_collection_noop_when_already_correct():
-    state = {"released": [], "current_collection": "GT Endurance Racing",
-             "collections": ["GT Endurance Racing"]}
+    state = {"released": [], "current_collection": "GT Racing Endurance",
+             "collections": ["GT Racing Endurance"]}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is True
@@ -719,7 +753,7 @@ def t_set_scene_collection_refuses_when_absent():
 
 def t_set_scene_collection_output_active_is_note_not_crash():
     state = {"released": [], "current_collection": "Other",
-             "collections": ["GT Endurance Racing", "Other"], "output_active": True}
+             "collections": ["GT Racing Endurance", "Other"], "output_active": True}
     port, srv = _start_fake_obs(state)
     ok, note = m.set_scene_collection(port=port, password="supersecret", timeout=5)
     assert ok is False
@@ -840,14 +874,14 @@ def t_set_current_program_scene_switches_to_intermission():
 # Pure scene-collection classifier — scene_collection_status
 # --------------------------------------------------------------------------
 def t_scene_collection_status_match():
-    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing", "Other"])
-    assert s == {"current": "GT Endurance Racing", "expected": "GT Endurance Racing",
-                 "available": ["GT Endurance Racing", "Other"], "match": True,
+    s = m.scene_collection_status("GT Racing Endurance", ["GT Racing Endurance", "Other"])
+    assert s == {"current": "GT Racing Endurance", "expected": "GT Racing Endurance",
+                 "available": ["GT Racing Endurance", "Other"], "match": True,
                  "expected_present": True, "renamed_variant": None}
 
 
 def t_scene_collection_status_wrong_but_present():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
     assert s["match"] is False
     assert s["expected_present"] is True
     assert s["renamed_variant"] is None
@@ -855,18 +889,18 @@ def t_scene_collection_status_wrong_but_present():
 
 
 def t_scene_collection_status_renamed_variant():
-    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2", "Scene"])
+    s = m.scene_collection_status("GT Racing Endurance 2", ["GT Racing Endurance 2", "Scene"])
     assert s["match"] is False
     assert s["expected_present"] is False
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
-    assert s["current"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
+    assert s["current"] == "GT Racing Endurance 2"
 
 
 def t_scene_collection_status_match_suppresses_renamed_variant():
     # A correct collection plus an old import-renamed duplicate must NOT report
     # a renamed_variant — match wins, no false "looks renamed" warning.
-    s = m.scene_collection_status("GT Endurance Racing",
-                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
+    s = m.scene_collection_status("GT Racing Endurance",
+                                  ["GT Racing Endurance", "GT Racing Endurance 2"])
     assert s["match"] is True
     assert s["renamed_variant"] is None
 
@@ -874,11 +908,11 @@ def t_scene_collection_status_match_suppresses_renamed_variant():
 def t_scene_collection_status_overlap_present_and_renamed():
     # A renamed duplicate is active while the real collection ALSO exists:
     # both flags are truthy — consumers must prefer the switchable case.
-    s = m.scene_collection_status("GT Endurance Racing 2",
-                                  ["GT Endurance Racing", "GT Endurance Racing 2"])
+    s = m.scene_collection_status("GT Racing Endurance 2",
+                                  ["GT Racing Endurance", "GT Racing Endurance 2"])
     assert s["match"] is False
     assert s["expected_present"] is True
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
 
 
 def t_scene_collection_status_expected_absent():
@@ -904,17 +938,17 @@ def t_scene_collection_action_skip_when_no_status():
 
 
 def t_scene_collection_action_ok_when_match():
-    s = m.scene_collection_status("GT Endurance Racing", ["GT Endurance Racing"])
-    assert m.scene_collection_action(s, "", True) == ("ok", "GT Endurance Racing")
+    s = m.scene_collection_status("GT Racing Endurance", ["GT Racing Endurance"])
+    assert m.scene_collection_action(s, "", True) == ("ok", "GT Racing Endurance")
 
 
 def t_scene_collection_action_switch_when_mismatch_present_enabled():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
-    assert m.scene_collection_action(s, "", True) == ("switch", "GT Endurance Racing")
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
+    assert m.scene_collection_action(s, "", True) == ("switch", "GT Racing Endurance")
 
 
 def t_scene_collection_action_warn_present_when_switch_disabled():
-    s = m.scene_collection_status("Other", ["GT Endurance Racing", "Other"])
+    s = m.scene_collection_status("Other", ["GT Racing Endurance", "Other"])
     action, detail = m.scene_collection_action(s, "", False)
     assert action == "warn_present" and detail is s        # dict passed through
 
@@ -926,10 +960,10 @@ def t_scene_collection_action_warn_absent_when_not_imported():
 
 
 def t_scene_collection_action_never_switches_to_renamed_variant():
-    # expected exact name absent, only a "GT Endurance Racing 2" variant present
-    s = m.scene_collection_status("GT Endurance Racing 2", ["GT Endurance Racing 2"])
+    # expected exact name absent, only a "GT Racing Endurance 2" variant present
+    s = m.scene_collection_status("GT Racing Endurance 2", ["GT Racing Endurance 2"])
     assert m.scene_collection_action(s, "", True)[0] == "warn_absent"
-    assert s["renamed_variant"] == "GT Endurance Racing 2"
+    assert s["renamed_variant"] == "GT Racing Endurance 2"
 
 
 class _FakeSock:
@@ -1788,6 +1822,169 @@ def t_feed_media_cursors_accepts_session():
     finally:
         m._connect = orig
     assert out == {} and note == "" and fs.closed is False
+# Device enumeration (#304) — pure parser + per-OS property-name map
+# --------------------------------------------------------------------------
+def t_parse_property_items_basic():
+    payload = {"propertyItems": [
+        {"itemName": "FaceTime HD", "itemEnabled": True, "itemValue": "0x14000000"},
+        {"itemName": "Elgato", "itemEnabled": True, "itemValue": "0x14200000"},
+        {"itemName": "Disabled Dummy", "itemEnabled": False, "itemValue": ""},
+    ]}
+    items = m.parse_property_items(payload)
+    assert items == [
+        {"name": "FaceTime HD", "value": "0x14000000", "enabled": True},
+        {"name": "Elgato", "value": "0x14200000", "enabled": True},
+    ]  # empty-value item dropped
+
+
+def t_parse_property_items_malformed():
+    assert m.parse_property_items({}) == []
+    assert m.parse_property_items({"propertyItems": None}) == []
+    assert m.parse_property_items("garbage") == []
+
+
+def t_device_property_name_per_platform():
+    assert m.device_property_name("darwin") == "device"
+    assert m.device_property_name("win32") == "video_device_id"
+    assert m.device_property_name("linux") == "device_id"
+    assert m.device_property_name("sunos5") is None
+
+
+def t_device_property_name_matches_setup_assets_variants():
+    # cross-check: obs_ws (enumeration) and setup-assets (localization) must agree on
+    # the per-OS device-id settings key, or a scanned value lands in the wrong field.
+    spec_sa = importlib.util.spec_from_file_location(
+        "setup_assets_x", os.path.join(ROOT, "src", "setup-assets.py"))
+    sa = importlib.util.module_from_spec(spec_sa); spec_sa.loader.exec_module(sa)
+    for os_key, plat in (("darwin", "darwin"), ("win", "win32"), ("linux", "linux")):
+        _src_id, prop_key = sa.DEVICE_VARIANTS[os_key]
+        assert m.device_property_name(plat) == prop_key, os_key
+
+
+def t_device_property_name_audio_kind_per_platform():
+    assert m.device_property_name("darwin", kind="audio") == "device_id"
+    assert m.device_property_name("win32", kind="audio") == "device_id"
+    assert m.device_property_name("linux", kind="audio") == "device_id"
+    assert m.device_property_name("sunos5", kind="audio") is None
+
+
+def t_device_property_name_audio_matches_setup_assets_audio_variants():
+    # cross-check: obs_ws (enumeration) and setup-assets (localization) must agree on
+    # the mic settings key, or a scanned value lands in the wrong field (#307).
+    spec_sa = importlib.util.spec_from_file_location(
+        "setup_assets_y", os.path.join(ROOT, "src", "setup-assets.py"))
+    sa = importlib.util.module_from_spec(spec_sa); spec_sa.loader.exec_module(sa)
+    for os_key, plat in (("darwin", "darwin"), ("win", "win32"), ("linux", "linux")):
+        _src_id, prop_key = sa.AUDIO_VARIANTS[os_key]
+        assert m.device_property_name(plat, kind="audio") == prop_key == "device_id", os_key
+
+
+def t_pick_input_kind_finds_macos_v2_via_substring():
+    # macOS reports av_capture_input_v2; the matcher is the av_capture_input substring.
+    kinds = ["image_source", "av_capture_input_v2", "coreaudio_input_capture"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "av_capture_input_v2"
+    assert m.pick_input_kind(kinds, m.AUDIO_INPUT_KIND_MATCHERS) == "coreaudio_input_capture"
+
+
+def t_pick_input_kind_honors_matcher_priority_over_list_order():
+    # dshow appears BEFORE v4l2 in the list, but the matcher order is
+    # (av_capture, dshow, v4l2); dshow's matcher outranks v4l2's regardless of
+    # list position — assert the preferred matcher wins.
+    kinds = ["v4l2_input", "dshow_input"]
+    assert m.pick_input_kind(kinds, m.VIDEO_INPUT_KIND_MATCHERS) == "dshow_input"
+
+
+def t_pick_input_kind_none_when_no_match_or_bad_input():
+    assert m.pick_input_kind(["image_source", "color_source"], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind([], m.VIDEO_INPUT_KIND_MATCHERS) is None
+    assert m.pick_input_kind(None, m.VIDEO_INPUT_KIND_MATCHERS) is None
+
+
+_VIDEO_ITEMS = [{"itemName": "FaceTime HD Camera", "itemValue": "0x1", "itemEnabled": True},
+                {"itemName": "Elgato Cam Link", "itemValue": "0x2", "itemEnabled": True}]
+_MIC_ITEMS = [{"itemName": "MacBook Air Microphone", "itemValue": "mic-uid", "itemEnabled": True}]
+
+
+def t_probe_device_options_lists_video_and_mic_and_cleans_up():
+    # darwin properties: video "device", audio "device_id".
+    state = {"prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    # NOTE: value-carrying assertions rely on the probe running on macOS (device props).
+    # The lifecycle assertions below are platform-independent.
+    assert isinstance(out["devices"], list) and isinstance(out["mic"], list)
+    # A throwaway scene was created and then removed (cleanup guarantee). The
+    # defensive pre-clear RemoveScene (before CreateScene) AND the finally
+    # block's own RemoveScene must both fire -> exactly 2 removals.
+    assert m.PROBE_SCENE_NAME in state.get("created_scenes", [])
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+    # Every temp input created was also removed.
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert created, "expected at least one temp input"
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+    # Temp inputs were created DISABLED (never enter program output).
+    assert all(enabled is False for (_s, _n, _k, enabled) in state["created_inputs"])
+
+
+def t_probe_device_options_cleans_up_even_when_read_raises():
+    # The property read fails mid-probe; the temp scene + input must STILL be removed.
+    state = {"prop_raises": True,
+             "prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]      # degraded, note explains
+    # Both the pre-clear RemoveScene and the finally block's RemoveScene fired.
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+
+
+def t_probe_device_options_removes_input_even_if_create_response_fails():
+    # OBS creates the input but the CreateInput response fails mid-exchange. Because the
+    # probe tracks the input for cleanup BEFORE calling CreateInput, the finally still
+    # removes every input OBS actually created — no leak on a lost create response.
+    state = {"create_raises": True,
+             "prop_items": {"device": _VIDEO_ITEMS, "device_id": _MIC_ITEMS}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]      # degraded (create failed)
+    created = [n for (_s, n, _k, _e) in state.get("created_inputs", [])]
+    assert created, "OBS should have recorded the create attempt"
+    assert sorted(created) == sorted(state.get("removed_inputs", []))
+
+
+def t_probe_device_options_no_capture_kind_is_note_not_crash():
+    # OBS reports no capture kinds at all -> empty lists + explanatory notes, no crash,
+    # scene still created and removed.
+    state = {"input_kinds": ["image_source", "color_source"], "prop_items": {}}
+    port, srv = _start_fake_obs(state)
+    try:
+        out = m.probe_device_options(port=port, password="supersecret", timeout=5)
+    finally:
+        srv.close()
+    assert out["devices"] == [] and out["note"]
+    assert out["mic"] == [] and out["mic_note"]
+    assert state.get("created_inputs", []) == []     # nothing to create
+    assert state.get("removed_scenes", []).count(m.PROBE_SCENE_NAME) == 2
+
+
+def t_probe_device_options_unreachable_is_quiet():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    free_port = sock.getsockname()[1]
+    sock.close()
+    out = m.probe_device_options(port=free_port, password="x", timeout=0.5)
+    assert out["devices"] == [] and out["mic"] == []
+    assert out["note"] and out["mic_note"]           # both carry the connect reason
 
 
 if __name__ == "__main__":

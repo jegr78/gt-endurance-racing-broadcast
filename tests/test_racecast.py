@@ -443,11 +443,11 @@ def t_oneshot_extra():
     assert m._oneshot_extra("media", [], R, B) == ["--out", os.path.join(R, "media")]
     # setup INJECTS media/graphics dirs into the collection -- always profile-scoped.
     assert m._oneshot_extra("setup", [], R, B) == \
-        ["--out", os.path.join(R, "GT_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
          "--media", os.path.join(R, "media"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra("setup", ["--media", "m"], R, B) == \
-        ["--out", os.path.join(R, "GT_Endurance.import.json"),
+        ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
          "--graphics", os.path.join(R, "graphics")]
     assert m._oneshot_extra(
         "setup", ["--out", "z", "--media", "m", "--graphics", "g"], R, B) == []
@@ -458,13 +458,13 @@ def t_oneshot_extra():
     with tempfile.TemporaryDirectory() as d:
         css = os.path.join(d, "hud.css")
         assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
-            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+            ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
              "--media", os.path.join(R, "media"),
              "--graphics", os.path.join(R, "graphics")]            # file absent -> skipped
         with open(css, "w") as fh:
             fh.write("#pov { left: 1516px; }")
         assert m._oneshot_extra("setup", [], R, B, overlay_css=css) == \
-            ["--out", os.path.join(R, "GT_Endurance.import.json"),
+            ["--out", os.path.join(R, "GT_Racing_Endurance.import.json"),
              "--media", os.path.join(R, "media"),
              "--graphics", os.path.join(R, "graphics"),
              "--overlay-css", css]                                 # file present -> added
@@ -472,20 +472,37 @@ def t_oneshot_extra():
         assert m._oneshot_extra("setup", ["--overlay-css", "x"], R, B,
                                 overlay_css=css).count("--overlay-css") == 0
 
+    # --profile-graphics is injected for `setup` only when the committed dir exists.
+    with tempfile.TemporaryDirectory() as d:
+        pg = os.path.join(d, "graphics")
+        assert m._oneshot_extra("setup", [], R, B, profile_graphics=pg).count(
+            "--profile-graphics") == 0                                 # dir absent -> skipped
+        os.makedirs(pg)
+        assert m._oneshot_extra("setup", [], R, B, profile_graphics=pg)[-2:] == \
+            ["--profile-graphics", pg]                                 # dir present -> added
+        # not injected for non-setup commands, and an explicit one in rest wins.
+        assert m._oneshot_extra("graphics", [], R, B, profile_graphics=pg).count(
+            "--profile-graphics") == 0
+        assert m._oneshot_extra("setup", ["--profile-graphics", "x"], R, B,
+                                profile_graphics=pg).count("--profile-graphics") == 0
+
 
 def t_sync_pov_transform_calls_setter_with_merged_box():
+    # All three mapped slots ("pov" -> Stint/"Feed POV", "webcam" -> Program/"Solo
+    # Webcam", "tyres-capture" -> Program/"Solo Tyres/Fuel Capture") must be synced
+    # from one call — capture every set_transform call.
     import tempfile
-    captured = {}
+    calls = []
 
     def fake_set(scene, source, transform):
-        captured["scene"] = scene
-        captured["source"] = source
-        captured["transform"] = transform
+        calls.append({"scene": scene, "source": source, "transform": transform})
         return True, ""
 
     with tempfile.TemporaryDirectory() as d:
         with open(os.path.join(d, "hud.css"), "w") as fh:
-            # override only left/top; width/height fall back to the hud.html base.
+            # override only #pov's left/top; width/height fall back to the
+            # hud.html base. #webcam and #tyres-capture get no override -> base
+            # box only.
             fh.write("#pov { left: 1516px; top: 600px; }")
         orig = m._active_overlay_dir
         m._active_overlay_dir = lambda: d
@@ -494,12 +511,29 @@ def t_sync_pov_transform_calls_setter_with_merged_box():
         finally:
             m._active_overlay_dir = orig
 
-    assert captured["scene"] == "Stint"
-    assert captured["source"] == "Feed POV"
-    tf = captured["transform"]
+    by_source = {c["source"]: c for c in calls}
+    assert set(by_source) == {"Feed POV", "Solo Webcam", "Solo Tyres/Fuel Capture"}
+
+    pov = by_source["Feed POV"]
+    assert pov["scene"] == "Stint"
+    tf = pov["transform"]
     assert tf["positionX"] == 1516 and tf["positionY"] == 600   # from the override
     assert tf["boundsWidth"] == 384 and tf["boundsHeight"] == 216  # from the base
     assert tf["boundsType"] == 2 and tf["alignment"] == 5
+
+    webcam = by_source["Solo Webcam"]
+    assert webcam["scene"] == "Program"
+    wtf = webcam["transform"]
+    # no override for #webcam -> the hud.html base box (16:9 default).
+    assert wtf["positionX"] == 14 and wtf["positionY"] == 695
+    assert wtf["boundsWidth"] == 336 and wtf["boundsHeight"] == 189
+
+    tyres = by_source["Solo Tyres/Fuel Capture"]
+    assert tyres["scene"] == "Program"
+    ttf = tyres["transform"]
+    # no override for #tyres-capture -> the hud.html base box.
+    assert ttf["positionX"] == 7 and ttf["positionY"] == 926
+    assert ttf["boundsWidth"] == 245 and ttf["boundsHeight"] == 84
 
 
 def t_run_module_exit_codes():
@@ -955,7 +989,7 @@ def t_oneshot_extra_paths():
     assert m._oneshot_extra("media", [], rd, base) == [
         "--out", os.path.join(rd, "media")]
     assert m._oneshot_extra("setup", [], rd, base) == [
-        "--out", os.path.join(rd, "GT_Endurance.import.json"),
+        "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
         "--media", os.path.join(rd, "media"),
         "--graphics", os.path.join(rd, "graphics")]
     assert m._oneshot_extra("cookies", [], rd, base) == ["--runtime-dir", base]
@@ -995,6 +1029,70 @@ def t_oneshot_extra_media_no_cookies_when_absent_or_user_supplied():
         open(os.path.join(base, "yt-cookies.txt"), "w").close()
         assert m._oneshot_extra("media", ["--cookies", "/my/jar"], rd, base) == [
             "--out", os.path.join(rd, "media")]
+def t_oneshot_extra_setup_out_is_kind_aware():
+    # #304: the `setup` default --out filename depends on the active profile kind.
+    # endurance (explicit or the default when unset) keeps the byte-identical name;
+    # solo gets its own template basename. An explicit --out always wins regardless.
+    rd = os.path.join("R", "demo")
+    base = "R"
+    assert m._oneshot_extra("setup", [], rd, base, kind="endurance") == [
+        "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    assert m._oneshot_extra("setup", [], rd, base, kind="solo") == [
+        "--out", os.path.join(rd, "GT_Racing_Solo.import.json"),
+        "--media", os.path.join(rd, "media"),
+        "--graphics", os.path.join(rd, "graphics")]
+    # no kind passed -> falls back to RACECAST_KIND from the environment (endurance
+    # when unset/blank/unknown -- matches setup-assets' own default).
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Racing_Endurance.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._oneshot_extra("setup", [], rd, base) == [
+            "--out", os.path.join(rd, "GT_Racing_Solo.import.json"),
+            "--media", os.path.join(rd, "media"),
+            "--graphics", os.path.join(rd, "graphics")]
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
+    # explicit --out still wins over the kind-aware default.
+    assert m._oneshot_extra("setup", ["--out", "z", "--media", "m", "--graphics", "g"],
+                            rd, base, kind="solo") == []
+
+
+def t_setup_import_name_by_kind():
+    # #304 follow-up: the kind-aware setup import filename is shared logic --
+    # both _oneshot_extra and the init wizard's "is setup already done?" probe
+    # (_init_import_json) must resolve to the SAME basename for a given kind.
+    assert m._setup_import_name("solo") == "GT_Racing_Solo.import.json"
+    assert m._setup_import_name("endurance") == "GT_Racing_Endurance.import.json"
+    assert m._setup_import_name("") == "GT_Racing_Endurance.import.json"
+
+
+def t_init_import_json_is_kind_aware():
+    # #304: _init_import_json used to hardcode GT_Racing_Endurance.import.json, so for
+    # a solo profile (whose setup writes GT_Racing_Solo.import.json) the init wizard
+    # never detected setup as done and kept re-running it. It must follow
+    # RACECAST_KIND the same way _oneshot_extra's setup default does.
+    saved = os.environ.pop("RACECAST_KIND", None)
+    try:
+        os.environ["RACECAST_KIND"] = "solo"
+        assert m._init_import_json().endswith("GT_Racing_Solo.import.json")
+        os.environ["RACECAST_KIND"] = "endurance"
+        assert m._init_import_json().endswith("GT_Racing_Endurance.import.json")
+        os.environ.pop("RACECAST_KIND", None)
+        assert m._init_import_json().endswith("GT_Racing_Endurance.import.json")
+    finally:
+        if saved is None:
+            os.environ.pop("RACECAST_KIND", None)
+        else:
+            os.environ["RACECAST_KIND"] = saved
 
 
 def t_brands_oneshot_mapping_and_out():
@@ -1012,7 +1110,7 @@ def t_profile_env_vars_filters_empty():
         sheet_push_url="", intro_url="https://i", outro_url="")
     assert m._profile_env_vars(rc) == {
         "RACECAST_SHEET_ID": "abc", "RACECAST_INTRO_URL": "https://i",
-        "RACECAST_PROFILE_NAME": "Demo"}
+        "RACECAST_PROFILE_NAME": "Demo", "RACECAST_KIND": "endurance"}
 
 
 def t_profile_env_vars_includes_obs_collection():
@@ -1128,6 +1226,32 @@ def t_profiles_data_lists_active_and_available():
         assert names["erf"]["sheet_set"] is False
 
 
+def t_profiles_data_reports_kind():
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        prof = os.path.join(td, "profiles")
+        os.makedirs(os.path.join(prof, "demo"))
+        os.makedirs(os.path.join(prof, "solo1"))
+        open(os.path.join(td, ".env.example"), "w").close()
+        with open(os.path.join(prof, "demo", "profile.env"), "w") as fh:
+            fh.write("NAME=Demo League\nSHEET_ID=abc\n")
+        with open(os.path.join(prof, "solo1", "profile.env"), "w") as fh:
+            fh.write("NAME=Solo One\nKIND=solo\nTEMPLATE=commentary\n")
+        os.makedirs(os.path.join(td, "runtime"))
+        with open(os.path.join(td, "runtime", "active-profile"), "w") as fh:
+            fh.write("demo\n")
+        orig_b, orig_r = m._env_base, m._runtime_base_dir
+        m._env_base = lambda *a, **k: td
+        m._runtime_base_dir = lambda: os.path.join(td, "runtime")
+        try:
+            d = m.profiles_data()
+        finally:
+            m._env_base, m._runtime_base_dir = orig_b, orig_r
+        by = {p["name"]: p for p in d["profiles"]}
+        assert by["demo"]["kind"] == "endurance", by["demo"]
+        assert by["solo1"]["kind"] == "solo", by["solo1"]
+
+
 def t_profile_use_data_switches_pointer():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1213,6 +1337,37 @@ def t_profile_new_data_bad_name_is_error():
         finally:
             m._env_base = orig_b
         assert d["ok"] is False and d["error"]
+
+
+def t_profile_new_data_forwards_kind_template():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(root=root, name=name, source=source, kind=kind,
+                    template=template)
+        return os.path.join(root, "profiles", "solo1")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        r = m.profile_new_data("Solo One", None, create=fake_create,
+                               kind="solo", template="pov")
+    finally:
+        m._env_base = orig
+    assert r["ok"] is True, r
+    assert seen["kind"] == "solo" and seen["template"] == "pov", seen
+
+
+def t_profile_new_data_defaults_endurance():
+    seen = {}
+    def fake_create(root, name, source, kind=None, template=None):
+        seen.update(kind=kind, template=template)
+        return os.path.join(root, "profiles", "gt3")
+    orig = m._env_base
+    m._env_base = lambda *a, **k: "/tmp/x"
+    try:
+        m.profile_new_data("GT3", "demo", create=fake_create)
+    finally:
+        m._env_base = orig
+    assert seen["kind"] == m.pcfg.DEFAULT_KIND and seen["template"] is None, seen
 
 
 def t_profile_env_entries_data_reads_active():
@@ -3609,7 +3764,7 @@ def _obsws_module():
 def t_check_scene_collection_switches_on_mismatch_when_enabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}
@@ -3636,7 +3791,7 @@ def t_check_scene_collection_switches_on_mismatch_when_enabled():
 def t_check_scene_collection_warns_not_switches_when_disabled():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)
     calls = {}
@@ -3664,7 +3819,7 @@ def t_check_scene_collection_warns_not_switches_when_disabled():
 def t_check_scene_collection_warns_when_switch_fails():
     import io, contextlib
     obs_ws = _obsws_module()
-    expected = "GT Endurance Racing — demo"
+    expected = "GT Racing Endurance — demo"
     st = obs_ws.scene_collection_status(
         "Old League", ["Old League", expected], expected=expected)   # mismatch, present
     calls = {}
@@ -3868,6 +4023,265 @@ def t_report_log_files_drops_stale_source():
             assert (("relay", fresh) in all_pairs) and (("streams", stale) in all_pairs)
         finally:
             m._log_sources = saved
+def t_profile_env_vars_includes_kind():
+    class _RC:  # minimal ResolvedConfig stand-in
+        sheet_id = "abc"; sheet_push_url = ""; intro_url = ""; outro_url = ""
+        trailer_url = ""
+        discord_webhook_url = ""; obs_collection = ""; console_secret = ""
+        discord_client_id = ""; discord_client_secret = ""; discord_voice_url = ""
+        event_title = ""; name = "Solo League"; logo_path = ""; kind = "solo"
+        template = ""
+    env = m._profile_env_vars(_RC())
+    assert env["RACECAST_KIND"] == "solo"
+    assert env["RACECAST_SHEET_ID"] == "abc"
+
+
+def t_profile_env_vars_includes_template():
+    # solo + a chosen starter template -> RACECAST_TEMPLATE flows to the child env
+    # (setup-assets.py reads it to pick GT_Racing_Solo_Commentary/GT_Racing_Solo_POV, #303).
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
+                               kind="solo", template="pov")
+    assert m._profile_env_vars(rc)["RACECAST_TEMPLATE"] == "pov"
+    # endurance profiles leave template empty -> filtered out (byte-identical env)
+    rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
+    assert "RACECAST_TEMPLATE" not in m._profile_env_vars(rc2)
+
+
+def t_env_upsert_preserves_other_keys():
+    # env_upsert_data must overlay ONLY the given keys — env_write_data (the
+    # underlying writer) treats its entries as the complete set and drops any
+    # unlisted real key, which would silently delete e.g. RACECAST_OBS_WS_PASSWORD
+    # if a naive two-key write were used to persist device selection (#304).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("# machine knobs\nRACECAST_OBS_WS_PASSWORD=secret\nRACECAST_UI_PORT=8089\n")
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "cam0", "RACECAST_CAPTURE": "cap1"}, path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text   # unrelated key preserved
+    assert "RACECAST_UI_PORT=8089" in text
+    assert "RACECAST_WEBCAM=cam0" in text
+    assert "RACECAST_CAPTURE=cap1" in text
+    assert "# machine knobs" in text                   # comment preserved
+
+
+def t_env_upsert_updates_existing_key_in_place():
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert2-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_WEBCAM=old\nRACECAST_UI_PORT=8089\n")
+    m.env_upsert_data({"RACECAST_WEBCAM": "new"}, path=p)
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_WEBCAM=new" in text and "RACECAST_WEBCAM=old" not in text
+    assert "RACECAST_UI_PORT=8089" in text
+
+
+def t_env_upsert_rejects_foreign_key_clearly():
+    # A machine .env that already holds a non-RACECAST_ key (should never happen,
+    # but the editor/device-scan must not blow up with the raw env_write_data
+    # wording) gets a clear, device-context error and writes nothing (#304 review).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-envupsert-foreign-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("FOO=bar\nRACECAST_UI_PORT=8089\n")
+    with open(p, encoding="utf-8") as fh:
+        before = fh.read()
+    res = m.env_upsert_data({"RACECAST_WEBCAM": "x"}, path=p)
+    assert not res["ok"]
+    assert "could not be saved" in res["error"]
+    with open(p, encoding="utf-8") as fh:
+        after = fh.read()
+    assert after == before                            # nothing written
+
+
+def t_resolve_device_selection_by_index_and_id():
+    devs = [{"name": "FaceTime", "value": "0x14000000"},
+            {"name": "Elgato HD60", "value": "0x14200000"}]
+    assert m.resolve_device_selection(devs, "1") == ("0x14000000", None)   # 1-based index
+    assert m.resolve_device_selection(devs, "2") == ("0x14200000", None)
+    assert m.resolve_device_selection(devs, "Elgato") == ("0x14200000", None)  # name substring
+    assert m.resolve_device_selection(devs, "0x14000000") == ("0x14000000", None)  # exact value
+    val, err = m.resolve_device_selection(devs, "9")
+    assert val is None and "out of range" in err
+    val, err = m.resolve_device_selection(devs, "nosuch")
+    assert val is None and err
+    assert m.resolve_device_selection(devs, "") == (None, None)   # blank = skip/leave
+
+
+def t_parse_device_scan_args_mic():
+    # #307: --mic is a third recognized flag alongside --webcam/--capture, mapping
+    # to writing RACECAST_MIC via env_upsert_data (preserves other keys).
+    assert m._parse_device_scan_args([]) == (None, None, None, None)
+    assert m._parse_device_scan_args(["--mic", "2"]) == (None, None, "2", None)
+    assert m._parse_device_scan_args(
+        ["--webcam", "1", "--capture", "2", "--mic", "3"]) == ("1", "2", "3", None)
+    try:
+        m._parse_device_scan_args(["--bogus", "x"])
+        raise AssertionError("expected ValueError for an unrecognized flag")
+    except ValueError:
+        pass  # expected: unrecognized flag
+
+
+def t_parse_device_scan_args_tyres():
+    # Task 6: --tyres is a fourth recognized flag (VIDEO device, resolves against
+    # the same enumerated video list as --webcam/--capture), mapping to writing
+    # RACECAST_TYRES_CAPTURE.
+    assert m._parse_device_scan_args(["--tyres", "2"]) == (None, None, None, "2")
+    assert m._parse_device_scan_args(
+        ["--webcam", "1", "--tyres", "3"]) == ("1", None, None, "3")
+
+
+def t_devices_write_data_accepts_mic():
+    # devices_write_data (the /api/devices/select backing) accepts a mic value and
+    # upserts RACECAST_MIC without disturbing unrelated .env keys (#307).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-devwrite-mic-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_OBS_WS_PASSWORD=secret\n")
+    res = m.devices_write_data(None, None, "MIC-ID", path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_MIC=MIC-ID" in text
+
+
+def t_devices_write_data_accepts_tyres():
+    # devices_write_data accepts a tyres/fuel capture value and upserts
+    # RACECAST_TYRES_CAPTURE (Control Center parity with device-scan --tyres).
+    import tempfile, os as _os
+    d = tempfile.mkdtemp(prefix="racecast-devwrite-tyres-")
+    p = _os.path.join(d, ".env")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write("RACECAST_OBS_WS_PASSWORD=secret\n")
+    res = m.devices_write_data(None, None, None, "TYRE-ID", path=p)
+    assert res["ok"], res
+    with open(p, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "RACECAST_TYRES_CAPTURE=TYRE-ID" in text
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text        # unrelated key preserved
+    assert "RACECAST_OBS_WS_PASSWORD=secret" in text
+
+
+def t_devices_enumerate_data_maps_probe_result():
+    import obs_ws
+    saved = obs_ws.probe_device_options
+    obs_ws.probe_device_options = lambda *a, **k: {
+        "devices": [{"name": "Cam", "value": "0x1", "enabled": True}],
+        "note": "",
+        "mic": [{"name": "Mic", "value": "uid", "enabled": True}],
+        "mic_note": "audio note"}
+    try:
+        out = m.devices_enumerate_data()
+    finally:
+        obs_ws.probe_device_options = saved
+    assert out["ok"] is True                       # ok reflects the video note only
+    assert out["devices"] == [{"name": "Cam", "value": "0x1"}]
+    assert out["note"] == ""
+    assert out["mic"] == [{"name": "Mic", "value": "uid"}]
+    assert out["mic_note"] == "audio note"
+
+
+def t_devices_enumerate_data_note_sets_ok_false():
+    import obs_ws
+    saved = obs_ws.probe_device_options
+    obs_ws.probe_device_options = lambda *a, **k: {
+        "devices": [], "note": "OBS unreachable", "mic": [], "mic_note": "OBS unreachable"}
+    try:
+        out = m.devices_enumerate_data()
+    finally:
+        obs_ws.probe_device_options = saved
+    assert out["ok"] is False
+    assert out["note"] == "OBS unreachable"
+
+
+def t_route_device_scan():
+    # device-scan is a single-word command (like freeport/links) that forwards
+    # any flags (--webcam/--capture) straight through to device_scan_cmd (#304).
+    assert m.route(["device-scan"]) == {"kind": "device-scan", "rest": []}
+    assert m.route(["device-scan", "--webcam", "1", "--capture", "2"]) == \
+        {"kind": "device-scan", "rest": ["--webcam", "1", "--capture", "2"]}
+
+
+def t_resolve_console_prefers_relay():
+    # A running relay that already latched a console short-circuits the scan.
+    out = m.resolve_console(
+        relay_get=lambda: {"source": "192.168.1.42"},
+        discover=lambda **k: (_ for _ in ()).throw(AssertionError("must not scan")))
+    assert out == {"consoles": ["192.168.1.42"], "note": "", "from_relay": True}
+
+
+def t_resolve_console_scans_when_no_relay():
+    # No relay (relay_get returns None) -> fall through to the scanner.
+    out = m.resolve_console(
+        relay_get=lambda: None,
+        discover=lambda **k: {"consoles": ["192.168.1.50"], "note": ""})
+    assert out == {"consoles": ["192.168.1.50"], "note": "", "from_relay": False}
+
+
+def t_resolve_console_scans_when_relay_unlatched():
+    # Relay up but telemetry not yet latched (source None) -> scan.
+    out = m.resolve_console(
+        relay_get=lambda: {"source": None},
+        discover=lambda **k: {"consoles": [], "note": "nope"})
+    assert out == {"consoles": [], "note": "nope", "from_relay": False}
+
+
+def t_route_gt7_discover():
+    assert m.route(["gt7-discover"]) == {"kind": "gt7-discover", "rest": []}
+    assert m.route(["gt7-discover", "--save", "--timeout", "6"]) == \
+        {"kind": "gt7-discover", "rest": ["--save", "--timeout", "6"]}
+
+
+def t_parse_gt7_discover_args():
+    assert m._parse_gt7_discover_args([]) == (False, False, 4.0, None)
+    assert m._parse_gt7_discover_args(["--save"]) == (True, False, 4.0, None)
+    assert m._parse_gt7_discover_args(["--print"]) == (False, True, 4.0, None)
+    assert m._parse_gt7_discover_args(["--timeout", "6"]) == (False, False, 6.0, None)
+    assert m._parse_gt7_discover_args(["--pick", "2"]) == (False, False, 4.0, "2")
+    try:
+        m._parse_gt7_discover_args(["--nope"])
+    except ValueError as e:
+        assert "usage:" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def t_ps_ip_write_validates_and_upserts(tmp_path=None):
+    import tempfile, os as _os
+    fd, path = tempfile.mkstemp(suffix=".env"); _os.close(fd)
+    try:
+        bad = m.ps_ip_write_data("not a host!", path=path)
+        assert bad["ok"] is False and "invalid" in bad["error"].lower()
+        good = m.ps_ip_write_data("192.168.1.42", path=path)
+        assert good["ok"] is True
+        with open(path, encoding="utf-8") as f:
+            assert "RACECAST_GT7_PS_IP=192.168.1.42" in f.read()
+    finally:
+        _os.remove(path)
+
+
+def t_gt7_discover_cmd_single_save(capsys=None):
+    # One console found + --save -> writes RACECAST_GT7_PS_IP via ps_ip_write_data
+    # (both resolve_console and ps_ip_write_data are mocked, so no real .env is touched).
+    saved_resolve = m.resolve_console
+    saved_write = m.ps_ip_write_data
+    writes = {}
+    m.resolve_console = lambda **k: {"consoles": ["192.168.1.42"], "note": "",
+                                     "from_relay": True}
+    m.ps_ip_write_data = lambda ip, path=None: writes.update(ip=ip) or {"ok": True}
+    try:
+        m.gt7_discover_cmd(["--save"])
+    finally:
+        m.resolve_console = saved_resolve
+        m.ps_ip_write_data = saved_write
+    assert writes["ip"] == "192.168.1.42"
 
 
 if __name__ == "__main__":
