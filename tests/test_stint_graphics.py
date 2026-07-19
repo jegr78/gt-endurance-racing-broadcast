@@ -89,11 +89,12 @@ def t_companion_toggles_new_graphics():
     walk(cfg)
     for label in NEW_GRAPHICS:
         assert label in toggled, f"companion missing toggle for: {label}"
-    # Page 1 was extended to a 4th row for the info toggles.
-    assert cfg["pages"]["1"]["gridSize"]["maxRow"] >= 4
-    # A dedicated GRID page exists.
-    names = [p.get("name") for p in cfg["pages"].values()]
-    assert "GRID" in names, f"no GRID page (pages: {names})"
+    # Page 1 is a hardware-clean 8x4 — no unreachable 5th row. The info + grid
+    # graphics moved onto the dedicated graphics page (see Director.md).
+    assert cfg["pages"]["1"]["gridSize"]["maxRow"] <= 3
+    # The grid/info toggles live on a page that advertises the graphics section.
+    names = [(p.get("name") or "").upper() for p in cfg["pages"].values()]
+    assert any("GRAPHIC" in n for n in names), f"no graphics page (pages: {names})"
 
 
 if __name__ == "__main__":

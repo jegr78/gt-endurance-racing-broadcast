@@ -141,7 +141,6 @@ Companion connection **"Generic HTTP Requests"**, action **GET**:
 |--------|----------|------|
 | **Feeds Next** | `http://127.0.0.1:8088/next` | once per handover, right after cutting to the new feed |
 | **Feeds Reload** | `http://127.0.0.1:8088/reload` | edited a cell in the sheet → reload the current feed now |
-| **Feeds Status** | `http://127.0.0.1:8088/status` | inspect feed state, cookies, URLs |
 | **Feed A Reload** | `http://127.0.0.1:8088/reload/A` | reconnect only Feed A (one feed glitched mid-stint) |
 | **Feed B Reload** | `http://127.0.0.1:8088/reload/B` | reconnect only Feed B |
 
