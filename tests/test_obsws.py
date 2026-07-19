@@ -1494,6 +1494,293 @@ def t_apply_split_audio_no_obs_is_503():
     assert status == 503 and payload.get("ok") is not True
 
 
+class _AliveFakeSock:
+    """Minimal socket stand-in for _Session.alive unit checks (#537 task 1).
+    Distinct from _FakeSock above (that one tracks close()-handshake calls)."""
+
+    def __init__(self, recv_chunks=None, send_raises=False):
+        self._recv = list(recv_chunks or [])
+        self._send_raises = send_raises
+        self.sent = []
+
+    def sendall(self, b):
+        if self._send_raises:
+            raise OSError("broken pipe")
+        self.sent.append(b)
+
+    def recv(self, n):
+        if self._recv:
+            return self._recv.pop(0)
+        return b""                       # EOF
+
+    def settimeout(self, t):
+        pass
+
+    def close(self):
+        pass
+
+
+def t_session_alive_starts_true():
+    s = m._Session(_AliveFakeSock(), b"")
+    assert s.alive is True
+
+
+def t_session_send_marks_dead_on_oserror():
+    s = m._Session(_AliveFakeSock(send_raises=True), b"")
+    try:
+        s.send_json({"x": 1})
+    except OSError:
+        pass  # expected — asserting alive below is the point of this test
+    assert s.alive is False, "send failure must flag the session dead"
+
+
+def t_session_next_json_marks_dead_on_eof():
+    s = m._Session(_AliveFakeSock(recv_chunks=[]), b"")   # recv -> b"" -> EOF
+    try:
+        s.next_json()
+    except ConnectionError:
+        pass  # expected — asserting alive below is the point of this test
+    assert s.alive is False
+
+
+# --------------------------------------------------------------------------
+# session= reuse (#537 task 2) — a passed-in session skips connect/close;
+# an omitted one keeps today's own-connect-own-close behavior byte-identical.
+# --------------------------------------------------------------------------
+class _ReuseFakeSession:
+    def __init__(self, responses):
+        self.responses = dict(responses)   # request_type -> responseData
+        self.alive = True
+        self.closed = False
+        self.requests = []
+
+    def request(self, rt, rd):
+        self.requests.append((rt, rd))
+        return self.responses.get(rt, {})
+
+    def close(self):
+        self.closed = True
+
+
+def t_set_input_mute_uses_passed_session_no_connect_no_close():
+    fs = _ReuseFakeSession({"SetInputMute": {}})
+    called = {"connect": 0}
+    orig = m._connect
+
+    def _fail_if_called(*a, **k):
+        called["connect"] += 1
+        return None, "x"
+
+    m._connect = _fail_if_called
+    try:
+        ok, note = m.set_input_mute("Feed A", True, session=fs)
+    finally:
+        m._connect = orig
+    assert ok is True and note == "", (ok, note)
+    assert called["connect"] == 0, "must NOT open its own connection"
+    assert fs.closed is False, "must NOT close a session it did not open"
+    assert fs.requests and fs.requests[0][0] == "SetInputMute"
+
+
+def t_get_program_screenshot_uses_passed_session_no_connect_no_close():
+    raw = b"JPEGDATA"
+    data_uri = "data:image/jpg;base64," + base64.b64encode(raw).decode()
+    fs = _ReuseFakeSession({
+        "GetCurrentProgramScene": {"currentProgramSceneName": "Stint"},
+        "GetSourceScreenshot": {"imageData": data_uri},
+    })
+    called = {"connect": 0}
+    orig = m._connect
+
+    def _fail_if_called(*a, **k):
+        called["connect"] += 1
+        return None, "x"
+
+    m._connect = _fail_if_called
+    try:
+        data, note = m.get_program_screenshot(session=fs)
+    finally:
+        m._connect = orig
+    assert data == raw and note == "", (data, note)
+    assert called["connect"] == 0, "must NOT open its own connection"
+    assert fs.closed is False, "must NOT close a session it did not open"
+    assert [rt for rt, _ in fs.requests] == ["GetCurrentProgramScene", "GetSourceScreenshot"]
+
+
+def t_omitting_session_still_connects_and_closes():
+    # Default path: a stub _connect returns a fake session; the function must
+    # still own the connect + close it — byte-identical to pre-#537 behavior.
+    fs = _ReuseFakeSession({"SetInputMute": {}})
+    orig = m._connect
+    m._connect = lambda *a, **k: (fs, "")
+    try:
+        ok, note = m.set_input_mute("Feed A", True)
+    finally:
+        m._connect = orig
+    assert ok is True and note == ""
+    assert fs.closed is True, "own-session path must close"
+
+
+# --------------------------------------------------------------------------
+# _ObsConn / _PassthroughConn — persistent session holder + kill-switch-off
+# connect-per-call passthrough (#537 task 3)
+# --------------------------------------------------------------------------
+class _ConnFakeSession:
+    """Distinct from the _FakeSession above (that one tracks .sent for the
+    set_current_program_scene-family tests); this one models .alive/.closed/
+    .requests for the _ObsConn holder tests (#537 task 3)."""
+
+    def __init__(self, responses=None):
+        self.responses = dict(responses or {})   # request_type -> responseData
+        self.alive = True
+        self.closed = False
+        self.requests = []
+
+    def request(self, rt, rd=None):
+        self.requests.append((rt, rd or {}))
+        return self.responses.get(rt, {})
+
+    def close(self):
+        self.closed = True
+
+
+def _script_conn(sessions):
+    """An _ObsConn whose _connect yields the given fake sessions in order (then None)."""
+    c = m._ObsConn()
+    seq = list(sessions)
+    def fake_connect(*a, **k):
+        return (seq.pop(0), "") if seq else (None, "OBS down")
+    c._connect_fn = fake_connect      # test seam (see implement note)
+    return c
+
+
+def t_obsconn_reuses_one_session():
+    fs = _ConnFakeSession({"GetVersion": {}})
+    c = _script_conn([fs])
+    calls = {"n": 0}
+    def fn(session=None):
+        calls["n"] += 1
+        session.request("GetVersion", {})
+        return "ok", ""
+    assert c.run(fn) == ("ok", "")
+    assert c.run(fn) == ("ok", "")
+    assert calls["n"] == 2 and len(fs.requests) == 2   # reused: one session, two calls
+
+
+def t_obsconn_reconnects_and_retries_once_on_death():
+    dead = _ConnFakeSession({}); dead.alive = True
+    good = _ConnFakeSession({"GetVersion": {}})
+    c = _script_conn([dead, good])
+    def fn(session=None):
+        if session is dead:
+            session.alive = False          # simulate socket dying mid-call
+            return None, "died"
+        session.request("GetVersion", {})
+        return "ok", ""
+    assert c.run(fn) == ("ok", "")         # retried on the fresh (good) session
+    assert dead.closed is True             # dead one was dropped/closed
+
+
+def t_obsconn_no_retry_on_request_level_failure():
+    fs = _ConnFakeSession({}); fs.alive = True
+    c = _script_conn([fs])
+    calls = {"n": 0}
+    def fn(session=None):
+        calls["n"] += 1
+        return None, "scene not found"     # request-level failure; session stays alive
+    assert c.run(fn) == (None, "scene not found")
+    assert calls["n"] == 1                 # NOT retried
+    assert fs.closed is False
+
+
+def t_obsconn_obs_down_falls_back_to_no_session():
+    c = _script_conn([])                   # _connect always returns (None, ...)
+    seen = {"session": "unset"}
+    def fn(session=None):
+        seen["session"] = session
+        return None, "obs unavailable"
+    assert c.run(fn) == (None, "obs unavailable")
+    assert seen["session"] is None         # called WITHOUT a session (per-call fallback)
+
+
+def t_passthrough_calls_without_session():
+    c = m._PassthroughConn()
+    seen = {"kw": "unset"}
+    def fn(x, session="MISSING"):
+        seen["kw"] = session
+        return x
+    assert c.run(fn, 7) == 7
+    assert seen["kw"] == "MISSING"         # no session kwarg injected
+    c.close()                              # no-op, must not raise
+
+
+class _RecordConn:
+    def __init__(self, tag): self.tag, self.calls = tag, []
+    def run(self, func, *a, **k):
+        self.calls.append((getattr(func, "__name__", func), a, k)); return self.tag
+    def close(self): self.calls.append(("closed", (), {}))
+
+
+# The shipped facade is the relay's _RelayObsFacade (racecast-feeds.py), which
+# late-binds the relay module's `_obs_ws` name; in this test that name is the real
+# obs_ws module (irofeeds._obs_ws, exposing _ROUTED_FNS), so routed names go through
+# the holders and everything else delegates straight to that module.
+_RMOD = irofeeds._obs_ws
+
+
+def t_relay_facade_routes_screenshot_vs_control():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    assert fac.get_program_screenshot(width=640) == "shot"   # _SHOT_FNS -> shot conn
+    assert fac.set_input_mute("Feed A", True) == "ctrl"      # other _ROUTED_FNS -> ctrl conn
+    assert shot.calls[0][0] == "get_program_screenshot"
+    assert ctrl.calls[0][0] == "set_input_mute"
+
+
+def t_relay_facade_passes_through_non_routed_attrs():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    assert fac.STINT_SCENE is _RMOD.STINT_SCENE          # constant pass-through
+    assert fac.stream_kbps is _RMOD.stream_kbps          # pure helper pass-through (not routed)
+    assert not shot.calls and not ctrl.calls             # neither holder was used
+
+
+def t_relay_facade_close_closes_both():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    irofeeds._RelayObsFacade(shot, ctrl).close()
+    assert shot.calls[-1][0] == "closed" and ctrl.calls[-1][0] == "closed"
+
+
+def t_relay_facade_direct_call_when_module_swapped_to_fake():
+    # A fake _obs_ws (no _ROUTED_FNS) -> the facade calls it DIRECTLY (no session=,
+    # no holder.run) — the safeguard that keeps unit tests off a real OBS socket.
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    class _FakeMod:
+        def set_input_mute(self, *a, **k): return ("fake", k)
+    orig = irofeeds._obs_ws
+    irofeeds._obs_ws = _FakeMod()
+    try:
+        got = fac.set_input_mute("Feed A", True)
+    finally:
+        irofeeds._obs_ws = orig
+    assert got == ("fake", {}), got                      # direct call, NO session= injected
+    assert not shot.calls and not ctrl.calls             # holders untouched
+
+
+def t_feed_media_cursors_accepts_session():
+    # #537: feed_media_cursors is in _ROUTED_FNS, so it must accept a passed session
+    # (skip _connect/close) — regression guard for the Task 2 gap.
+    fs = _ConnFakeSession({"GetInputList": {"inputs": []}})
+    orig = m._connect
+    m._connect = lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not connect"))
+    try:
+        out, note = m.feed_media_cursors(session=fs)
+    finally:
+        m._connect = orig
+    assert out == {} and note == "" and fs.closed is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

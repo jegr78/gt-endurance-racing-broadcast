@@ -83,6 +83,42 @@ try:
     import obs_ws as _obs_ws
 except Exception:                                # noqa: BLE001 — reflection is optional
     _obs_ws = None
+# #537: a stable reference to the real module, captured at import time. Tests swap
+# the module-level `_obs_ws` name above to fakes/None to stub OBS calls; capturing a
+# second name here means the persistent-connection classes (_ObsConn etc.) are
+# always available even when `_obs_ws` itself currently points at a fake.
+_OBS_WS_MODULE = _obs_ws
+
+
+class _RelayObsFacade:
+    """Routes Relay/handler obs_ws.* calls (#537) through two persistent connection
+    holders — but ONLY when the module-level `_obs_ws` name currently refers to the
+    real obs_ws module (recognisable by its `_ROUTED_FNS` registry). Every lookup is
+    late-bound to `_obs_ws` at CALL time (not frozen at Relay construction), so a
+    test that monkeypatches `_obs_ws` to a lightweight fake — before or after a Relay
+    already exists — still gets a direct, unwrapped call to that fake, exactly like
+    the pre-#537 `_obs_ws.<fn>(...)` call sites (no surprise `session=` kwarg, no
+    real socket connect attempt from a unit test). Only the real module's routed
+    functions ever go through `_ObsConn`/`_PassthroughConn.run()`."""
+
+    def __init__(self, shot_conn, ctrl_conn):
+        self._shot, self._ctrl = shot_conn, ctrl_conn
+
+    def __getattr__(self, name):
+        target = _obs_ws                    # re-read the CURRENT module-level name
+        if target is None:
+            raise AttributeError(name)
+        fn = getattr(target, name)
+        routed = getattr(target, "_ROUTED_FNS", None)
+        if routed is not None and name in routed:
+            shot_fns = getattr(target, "_SHOT_FNS", frozenset())
+            conn = self._shot if name in shot_fns else self._ctrl
+            return lambda *a, **k: conn.run(fn, *a, **k)
+        return fn                           # constants / pure helpers / an unrouted fake
+
+    def close(self):
+        self._shot.close()
+        self._ctrl.close()
 
 import chat_admin  # required (ChatStore); src/scripts is on sys.path via the block above
 import broadcast_chat  # read-only YouTube broadcast-chat reader (#294); pure parsers
@@ -352,6 +388,12 @@ def fanout_enabled(environ):
     (#358, live-verified 2026-06-29); set RACECAST_FEED_FANOUT=0 to fall back to
     the proven direct-serve path. Pure so the switch is unit-testable."""
     return str(environ.get("RACECAST_FEED_FANOUT", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def obs_ws_persist_enabled(environ):
+    """Reuse two persistent obs-websocket connections instead of connect-per-call
+    (#537). Default ON; a falsey RACECAST_OBS_WS_PERSIST restores connect-per-call. Pure."""
+    return str(environ.get("RACECAST_OBS_WS_PERSIST", "")).strip().lower() not in _FANOUT_FALSEY
 
 
 def feed_autoresync_enabled(environ):
@@ -5736,6 +5778,9 @@ class Feed:
         if _obs_ws is None:
             return []
         try:
+            # #537: deliberately NOT routed through relay._obs — the Feed holds no
+            # facade reference (it is built before/independent of Relay), and this
+            # drop-recovery reconnect is rare, so it stays a connect-per-call site.
             names, note = _obs_ws.release_feed_inputs(ports=[self.port])
             if names:
                 self.log.info("fan-out recovery on %s — rebuilt OBS input(s) %s so OBS "
@@ -6040,6 +6085,21 @@ class Relay:
             self.pov.quality_pinned = True
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
+        # #537: persistent obs-websocket connections (or a passthrough shim when
+        # disabled), routed to by the Relay methods/handlers below instead of
+        # connect-per-call. Conn classes come from _OBS_WS_MODULE (the real module,
+        # stable even if a test has already swapped the plain `_obs_ws` name to a
+        # fake by this point); _RelayObsFacade late-binds every call to whatever
+        # `_obs_ws` currently is, routing through the persistent conns only for the
+        # real module.
+        if _obs_ws is None:
+            self._obs = None
+        elif obs_ws_persist_enabled(os.environ):
+            self._obs = _RelayObsFacade(
+                _OBS_WS_MODULE._ObsConn(), _OBS_WS_MODULE._ObsConn())
+        else:
+            self._obs = _RelayObsFacade(
+                _OBS_WS_MODULE._PassthroughConn(), _OBS_WS_MODULE._PassthroughConn())
         self.feed_prebuffer_s = feed_prebuffer_s(os.environ)   # #533: OBS/program-audio trailing depth
         self._stall_signal = feed_stall_signal_enabled(os.environ)   # #535
         self._stall_floor = feed_stall_floor_s(os.environ)           # #535
@@ -6441,7 +6501,7 @@ class Relay:
                     continue
                 if live != last_key:            # handover -> fresh window for the new feed
                     prev_cursor = None; ratios = []; last_key = live
-                cursors, _note = _obs_ws.feed_media_cursors(ports=[f.port])
+                cursors, _note = self._obs.feed_media_cursors(ports=[f.port])
                 cur = cursors.get(f.port)
                 ratio = cursor_progress_ratio(prev_cursor, cur, self._freeze_interval_s)
                 prev_cursor = cur
@@ -6488,7 +6548,7 @@ class Relay:
         on_air_scene = getattr(_obs_ws, "STINT_SCENE", "Stint")
         intermission = getattr(_obs_ws, "INTERMISSION_SCENE", "Intermission")
         try:
-            scene, note = _obs_ws.get_current_program_scene()
+            scene, note = self._obs.get_current_program_scene()
         except Exception as e:                            # noqa: BLE001 — best effort
             self.obs_note = f"{type(e).__name__}: {e}"
             return
@@ -6502,7 +6562,7 @@ class Relay:
                                on_air_scene=on_air_scene,
                                already_failed_over=self._failed_over):
             return
-        ok, note = _obs_ws.set_current_program_scene(intermission)
+        ok, note = self._obs.set_current_program_scene(intermission)
         if not ok:                                        # leave un-latched so the next tick retries
             self.obs_note = note or self.obs_note
             return
@@ -6544,7 +6604,7 @@ class Relay:
         if not maybe_raise and not maybe_lower:
             return
         on_air_scene = getattr(_obs_ws, "STINT_SCENE", "Stint")
-        state, note = _obs_ws.read_obs_state([(on_air_scene, STANDBY_COVER_SOURCE)], [])
+        state, note = self._obs.read_obs_state([(on_air_scene, STANDBY_COVER_SOURCE)], [])
         if state is None:                    # OBS unreachable — one note, retry next tick
             self.obs_note = note or self.obs_note
             return
@@ -6555,7 +6615,7 @@ class Relay:
                                    cover_shown, self._cover_auto_owned, self._cover_fired,
                                    scene, on_air_scene=on_air_scene)
         if action == "raise":
-            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, True)
+            ok, note = self._obs.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, True)
             if not ok:                       # not latched -> retry next tick
                 self.obs_note = note or self.obs_note
                 return
@@ -6564,7 +6624,7 @@ class Relay:
             LOG.warning("Auto-cover: on-air feed %s source %s -> raised Standby Cover (#495)",
                         f.name, ss)
         elif action == "lower":
-            ok, note = _obs_ws.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, False)
+            ok, note = self._obs.set_scene_item_enabled(on_air_scene, STANDBY_COVER_SOURCE, False)
             if not ok:
                 self.obs_note = note or self.obs_note
                 return
@@ -6744,7 +6804,7 @@ class Relay:
             return
 
         def run():
-            _ok, note = _obs_ws.set_scene_item_enabled(
+            _ok, note = self._obs.set_scene_item_enabled(
                 _obs_ws.STINT_SCENE, _obs_ws.POV_SOURCE, shown)
             self.obs_note = note or None
         threading.Thread(target=run, daemon=True).start()
@@ -6762,7 +6822,7 @@ class Relay:
             return
 
         def run():
-            _applied, note = _obs_ws.reflect_feed_state(live, cut)
+            _applied, note = self._obs.reflect_feed_state(live, cut)
             self.obs_note = note or None
         threading.Thread(target=run, daemon=True).start()
 
@@ -6798,7 +6858,7 @@ class Relay:
             return
         now = time.time()
         try:
-            reachable, stats, note = _obs_ws.get_health_stats()
+            reachable, stats, note = self._obs.get_health_stats()
             kbps = _obs_ws.stream_kbps(self._obs_last_bytes, self._obs_last_bytes_ts,
                                        stats.get("output_bytes"), now,
                                        stats.get("stream_active"))
@@ -7331,6 +7391,11 @@ class Relay:
         for f in self.feeds.values(): f.shutdown()
         if self.pov: self.pov.shutdown()
         for srv in self._fanout_servers: srv.stop()
+        if getattr(self, "_obs", None) is not None:
+            try:
+                self._obs.close()          # #537: clean 1000 on the persistent sessions
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
 
 
 def _push_live_schedule(relay, setup_ctl):
@@ -8285,7 +8350,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
                     data, note = _program_shot_cache.fetch(
-                        lambda: _obs_ws.get_program_screenshot(width=640))
+                        lambda: relay._obs.get_program_screenshot(width=640))
                     if data is None:
                         return self._send({"error": "preview unavailable",
                                            "note": note}, 503)
@@ -8387,7 +8452,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send(flag_graphic_store.clear())
                     return self._send({"error": "unknown", "path": self.path}, 404)
                 if p == ["obs", "split-audio"]:
-                    payload, status = apply_split_audio(relay, _obs_ws)
+                    payload, status = apply_split_audio(relay, relay._obs)
                     return self._send(payload, status)
                 if p[:1] == ["chat"]:
                     if not chat_store:
@@ -8410,7 +8475,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         active = parts_mod.stream_active_param(
                             qs.get("stream_active", [None])[0])
                         if active is None and _obs_ws is not None:
-                            st, _n = _obs_ws.read_obs_state([], [])
+                            st, _n = relay._obs.read_obs_state([], [])
                             if isinstance(st, dict) and isinstance(st.get("stream"), dict):
                                 active = bool(st["stream"].get("active"))
                         vm = parts_mod.parts_view_model(rows, part_store.get(), active)
@@ -8494,7 +8559,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         if _obs_ws is None:
                             return self._send({"error": "obs unavailable"}, 503)
                         data, note = _program_shot_cache.fetch(
-                            lambda: _obs_ws.get_program_screenshot(width=640))
+                            lambda: relay._obs.get_program_screenshot(width=640))
                         if data is None:
                             return self._send({"error": "preview unavailable",
                                                "note": note}, 503)
@@ -8926,7 +8991,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             duration = max(0, min(10000, int(duration)))
                         except (TypeError, ValueError):
                             duration = None
-                    ok, note = _obs_ws.set_current_program_scene(
+                    ok, note = relay._obs.set_current_program_scene(
                         body.get("scene"), transition=transition, duration_ms=duration)
                     if not ok:
                         return self._send({"ok": False, "error": note}, 503)
@@ -8935,7 +9000,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                 if p == ["obs", "source"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
-                    ok, note = _obs_ws.set_scene_item_enabled(
+                    ok, note = relay._obs.set_scene_item_enabled(
                         body.get("scene"), body.get("source"), bool(body.get("on")))
                     return self._send({"ok": True} if ok
                                       else {"ok": False, "error": note}, 200 if ok else 503)
@@ -8944,15 +9009,15 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "obs unavailable"}, 503)
                     inp = body.get("input")
                     if "mute" in body:
-                        ok, note = _obs_ws.set_input_mute(inp, bool(body.get("mute")))
+                        ok, note = relay._obs.set_input_mute(inp, bool(body.get("mute")))
                     elif "db" in body:
-                        ok, note = _obs_ws.set_input_volume(inp, body.get("db"))
+                        ok, note = relay._obs.set_input_volume(inp, body.get("db"))
                     else:
                         return self._send({"ok": False, "error": "audio needs db or mute"}, 400)
                     return self._send({"ok": True} if ok
                                       else {"ok": False, "error": note}, 200 if ok else 503)
                 if p == ["obs", "split-audio"]:
-                    payload, status = apply_split_audio(relay, _obs_ws)
+                    payload, status = apply_split_audio(relay, relay._obs)
                     return self._send(payload, status)
                 if p == ["obs", "stream"]:
                     if _obs_ws is None:
@@ -8960,7 +9025,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if "on" not in body:
                         return self._send({"ok": False,
                                            "error": "stream needs on"}, 400)
-                    ok, note = _obs_ws.set_stream(bool(body.get("on")))
+                    ok, note = relay._obs.set_stream(bool(body.get("on")))
                     return self._send({"ok": True} if ok
                                       else {"ok": False, "error": note},
                                       200 if ok else 503)
@@ -8969,7 +9034,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"error": "obs unavailable"}, 503)
                     sources = [(s.get("scene"), s.get("source"))
                                for s in (body.get("sources") or [])]
-                    state, note = _obs_ws.read_obs_state(sources, body.get("inputs") or [])
+                    state, note = relay._obs.read_obs_state(sources, body.get("inputs") or [])
                     if state is None:
                         return self._send({"ok": False, "error": note}, 503)
                     return self._send({"ok": True, **state})
@@ -8983,7 +9048,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)
                     port = self.server.server_address[1]
-                    names, note = _obs_ws.refresh_browser_inputs(
+                    names, note = relay._obs.refresh_browser_inputs(
                         needle=f"127.0.0.1:{port}")
                     return self._send({"ok": True, "count": len(names),
                                        "note": note or
@@ -9000,7 +9065,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if key is None:
                         return self._send({"ok": False,
                             "error": f"unknown feed {body.get('feed')!r}"}, 400)
-                    names, note = _obs_ws.release_feed_inputs(ports=[relay.feeds[key].port])
+                    names, note = relay._obs.release_feed_inputs(ports=[relay.feeds[key].port])
                     return self._send({"ok": True, "feed": key, "count": len(names),
                                        "rebuilt": names,
                                        "note": note or f"Reconnected OBS to Feed {key}"})
@@ -9025,7 +9090,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if not ok:
                         return self._send({"ok": False, "error": res[0]}, res[1])
                     idx = res
-                    st, _n = _obs_ws.read_obs_state([], [])
+                    st, _n = relay._obs.read_obs_state([], [])
                     if (isinstance(st, dict) and isinstance(st.get("stream"), dict)
                             and st["stream"].get("active")):
                         return self._send({"ok": False,
@@ -9036,10 +9101,10 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                             "error": "Part {} has no stream-key reference "
                                      "(Producer tab)".format(idx)}, 400)
                     ok2, note = apply_stream_service_for_ref(
-                        ref, channel_csv_url, push_url, _obs_ws.set_stream_service)
+                        ref, channel_csv_url, push_url, relay._obs.set_stream_service)
                     if not ok2:
                         return self._send({"ok": False, "error": note}, 502)
-                    ok3, note3 = _obs_ws.set_stream(True)
+                    ok3, note3 = relay._obs.set_stream(True)
                     if not ok3:
                         return self._send({"ok": False, "error": note3}, 503)
                     part_store.mark_live(idx)
@@ -9067,7 +9132,7 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     ok, res = parts_mod.validate_end(body, rows, part_store.get())
                     if not ok:
                         return self._send({"ok": False, "error": res[0]}, res[1])
-                    ok2, note = _obs_ws.set_stream(False)
+                    ok2, note = relay._obs.set_stream(False)
                     if not ok2:
                         return self._send({"ok": False, "error": note}, 503)
                     pre_vm = parts_mod.parts_view_model(rows, part_store.get(),
@@ -9548,6 +9613,10 @@ def main():
     def _flag_graphic_apply(scene, source, enabled):
         # Best-effort OBS apply; _obs_ws is None when the obs_ws import failed or
         # OBS is unreachable. Same contract as the POV/feed reflect calls.
+        # #537: deliberately NOT routed through relay._obs — reassert() below calls
+        # this synchronously (to re-push a persisted flag on restart) before `relay`
+        # is constructed; closing over `relay` here would NameError on that path
+        # whenever a flag was left active across a restart. Stays connect-per-call.
         if _obs_ws is None:
             return False, "obs unavailable"
         return _obs_ws.set_scene_item_enabled(scene, source, enabled)
