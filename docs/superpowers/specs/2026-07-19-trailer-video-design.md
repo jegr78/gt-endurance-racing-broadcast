@@ -40,6 +40,17 @@ are hard-coded to the intro/outro pair.
 - **Sourcing:** identical to Intro/Outro — `get-media.py` resolves the URL
   (CLI > `RACECAST_TRAILER_URL` env > Sheet Assets tab) and downloads a local MP4;
   played as a local OBS media source. No relay streaming, no browser source.
+- **Default / demo clip (confirmed with user):** there is **no** hard-coded default
+  URL in code or `profile.env` (mirroring Intro/Outro — `INTRO_URL`/`OUTRO_URL` ship
+  blank; the demo clips come from the public demo Sheet's Assets tab). The Trailer's
+  "default" is therefore a **`Trailer Video` row in the demo Sheet's Assets tab**,
+  which the user maintains and points at a real Trailer video **they upload to their
+  own channel**. In the repo the default surfaces only as a **sample-template row**
+  (`Trailer Video | https://www.youtube.com/watch?v=SAMPLE0TRAILER`) in
+  `src/docs/sheet-template/Assets.csv` and the wiki `Sheet-Template.md`, matching the
+  `SAMPLE0INTRO`/`SAMPLE0OUTRO` placeholders. Once the user adds the demo Sheet row,
+  `racecast media` under the `demo` profile downloads the Trailer clip automatically
+  — no code change beyond wiring the `trailer` key through `get-media.py`.
 - **Control surfaces:** Director Panel PGM macro **and** Companion button, matching
   how Intro/Outro are exposed. The Companion button uses the native OBS-WebSocket
   `set_scene` action (no relay call), like INTRO/OUTRO.
@@ -218,13 +229,23 @@ Mirror the existing Intro/Outro test coverage (stdlib-only runnable scripts):
 
 - `CLAUDE.md`: extend the Intro/Outro mentions (≈lines 185, 247, 260–261, 304,
   329–331) to include the Trailer.
+- Sample-template row for the default/demo clip:
+  `src/docs/sheet-template/Assets.csv` gets
+  `Trailer Video,https://www.youtube.com/watch?v=SAMPLE0TRAILER` (next to the
+  `SAMPLE0INTRO`/`SAMPLE0OUTRO` rows).
 - Wiki under `src/docs/wiki/`: `OBS-Setup.md` (Trailer scene + Companion button),
-  `Sheet-Template.md` (Assets `Trailer Video` row), `Director.md` (TRAILER macro /
-  run-of-show), `Configuration.md` (`TRAILER_URL` profile key).
+  `Sheet-Template.md` (Assets `Trailer Video` sample row), `Director.md` (TRAILER
+  macro / run-of-show), `Configuration.md` + `Profiles.md` (`TRAILER_URL` profile key).
 - **Screenshots (project rule — same change):** the Director Panel changed
   (`director-panel.png`) and the Companion PAGE 1 board changed
   (`companion-page1-*.png`). Regenerate via the `wiki-screenshots` and
   `companion-screenshots` skills and commit alongside the code.
+
+## User-provided (outside the repo)
+
+- Upload a real Trailer video to the user's YouTube channel and add a
+  `Trailer Video` row (label + that URL) to the **demo Sheet's Assets tab** so the
+  `demo` profile downloads it. (The repo only ships the `SAMPLE0TRAILER` template row.)
 
 ## Open / to confirm during planning
 
