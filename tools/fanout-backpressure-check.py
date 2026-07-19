@@ -77,49 +77,29 @@ class _Feed:
         self.lock = threading.Lock()
 
 
-def read_until(ring, cursor, high, timeout):
-    """Like FeedRing.read but never serves past absolute offset `high` — the
-    continuous trailing cap. Uses the ring's own lock/buffer; no production
-    change. Returns (data, new_cursor)."""
-    with ring._cond:
-        live = ring._base + len(ring._buf)
-        avail = min(high, live)
-        if cursor >= avail and not ring.closed:
-            ring._cond.wait(timeout)
-            live = ring._base + len(ring._buf)
-            avail = min(high, live)
-        if cursor < ring._base:                    # fell behind retention -> snap
-            cursor = ring._base
-        if cursor >= avail:
-            return b"", cursor
-        data = bytes(ring._buf[cursor - ring._base: avail - ring._base])
-        return data, avail
+def serve_once(conn, ring, prebuffer_s, feed, relay_mod, stop, mode):
+    """Serve one consumer, driving the REAL production code from the relay module.
 
+    mode="cap":  the SHIPPED path — trailing START via `fanout_join_offset`, then
+      `fanout_capped_read` each cycle (the continuous wall-clock high-water cap).
+      This IS FeedFanoutServer._serve's read logic, so a PASS here validates the
+      shipped function, not a re-implementation.
+    mode="join": the pre-fix behaviour for contrast — trailing start, then read to
+      the live edge (no cap), which a greedy consumer drains.
 
-def serve_once(conn, ring, prebuffer_s, feed, join_offset_fn, stop, mode):
-    """Serve one consumer.
-
-    mode="join": a byte-for-byte copy of the SHIPPED FeedFanoutServer._serve —
-      trailing START cursor, then read/send everything up to the live edge.
-    mode="cap":  the proposed fix — cap every read at the trailing offset
-      (`live - N`, wall-clock-advancing via the time index), so even a greedy
-      1x consumer is held ~N behind and the reserve is released during a stall.
-
-    Both use the REAL production join function; "cap" additionally re-caps each
-    cycle. `sent` is counted so the sampler can locate the consumer's cursor."""
+    `sent` is counted so the sampler can locate the consumer's cursor."""
     try:
         conn.recv(65536)
         conn.sendall(b"HTTP/1.0 200 OK\r\n"
                      b"Content-Type: video/mp2t\r\n"
                      b"Connection: close\r\n\r\n")
-        cursor = join_offset_fn(ring, prebuffer_s, time.monotonic())
+        cursor = relay_mod.fanout_join_offset(ring, prebuffer_s, time.monotonic())
         with feed.lock:
             feed.join_offset = cursor
             feed.sent = 0
         while not stop.is_set() and not ring.closed:
             if mode == "cap":
-                high = join_offset_fn(ring, prebuffer_s, time.monotonic())
-                data, cursor = read_until(ring, cursor, high, timeout=0.2)
+                data, cursor = relay_mod.fanout_capped_read(ring, cursor, prebuffer_s)
             else:
                 data, cursor = ring.read(cursor, timeout=1.0)
             if data:
@@ -212,7 +192,7 @@ def main():
             conn, _ = srv.accept()
         except OSError:
             return
-        serve_once(conn, ring, args.prebuffer, feed, m.fanout_join_offset, stop, args.mode)
+        serve_once(conn, ring, args.prebuffer, feed, m, stop, args.mode)
     threading.Thread(target=accept_loop, daemon=True).start()
 
     url = f"http://127.0.0.1:{port}"
@@ -291,7 +271,7 @@ def main():
           f"last-third median {med_last:5.2f}s")
     if passed:
         print("VERDICT: PASS — a real 1x consumer HELD the trailing reserve near N.")
-        print("  => approach A holds on this machine; a source gap < N is absorbed.")
+        print("  => the continuous cap holds on this machine; a source gap < N is absorbed.")
         return 0
     print("VERDICT: FAIL — the reserve drained below the hold floor "
           f"({hold_floor:.2f}s).")
