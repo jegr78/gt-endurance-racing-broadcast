@@ -34,9 +34,33 @@ def t_panel_has_trailer_macro():
         assert name in macro, f"TRAILER macro must mute {name}"
 
 
-# NOTE: the Companion button assertions (t_companion_has_trailer_button,
-# t_companion_red_flag_still_present) are added to THIS file in Task 6, so every
-# commit stays green — do not add them here in Task 5.
+def t_companion_has_trailer_button():
+    cfg = json.loads(_read(os.path.join("src", "companion", "racecast-buttons.companionconfig")))
+
+    def downs(btn):
+        try:
+            return btn["steps"]["0"]["action_sets"]["down"]
+        except (KeyError, TypeError):
+            return []
+
+    def scene_val(a):
+        return ((a.get("options") or {}).get("scene") or {}).get("value")
+
+    target = None
+    for page in cfg.get("pages", {}).values():
+        for row in (page.get("controls", {}) or {}).values():
+            for btn in (row or {}).values():
+                if isinstance(btn, dict) and any(scene_val(a) == "Trailer" for a in downs(btn)
+                                                 if isinstance(a, dict)):
+                    target = btn
+    assert target is not None, "no Companion button switches to the Trailer scene"
+    assert (target.get("style") or {}).get("text") == "TRAILER", target.get("style")
+
+
+def t_companion_red_flag_still_present():
+    # RED FLAG moved slots but must still exist (it also lives on PAGE 3).
+    raw = _read(os.path.join("src", "companion", "racecast-buttons.companionconfig"))
+    assert "RED\\nFLAG" in raw, "RED FLAG button disappeared"
 
 
 if __name__ == "__main__":
