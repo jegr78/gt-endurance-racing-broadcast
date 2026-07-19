@@ -57,23 +57,34 @@ the ring and OBS.
 ## Approach: a trailing read cursor (approach A)
 
 The smoothing data **already exists in the ring** (~150 s retained at these
-bitrates). We are only choosing *where* OBS reads from: instead of the live edge,
-OBS joins **N seconds behind** it. The reserve then lives in the existing ring,
-*between* OBS's cursor and the live write head.
+bitrates). The relay serves OBS only up to a **trailing high-water mark** that
+sits `N` seconds behind the live edge; the newest `N` seconds are always held
+back in the ring.
 
 ```
-   ring:  [ base .......... OBS cursor ==N seconds== live_offset ]  <- streamlink writes here
-                              │<------- reserve ------->│
-                              └─ OBS reads here (~1x playout)
+   ring:  [ base ...... OBS cursor ...... high-water ==N== live_offset ]  <- streamlink writes here
+                          │<-- servable -->│<-- held-back reserve -->│
+                          └─ OBS reads here          (never served yet)
 ```
 
-Because OBS reads at ~1× playout (its media source caps buffering at ~960 ms, so
-it cannot greedily drain ahead), **TCP back-pressure holds the N-second gap
-stable**: the live edge advances at the source's average rate (~1× for a live
-stream) and OBS's cursor advances at playout (~1×), so the gap oscillates around
-N. When the source stalls for up to N seconds, OBS keeps reading the
-already-buffered bytes ahead of its cursor and **never starves**; when the source
-resumes with a burst, the gap is restored.
+The high-water mark = `trailing_offset(N, now)`, the offset that was the live edge
+`N` seconds ago (found via the time index). It advances at **wall-clock 1×**, so
+the relay releases bytes to OBS at ~1× — **independent of how greedily OBS reads**.
+This is the crucial property: a consumer cannot drain the reserve by reading
+ahead, because the relay simply will not serve past the high-water mark. When the
+source **stalls**, the live edge freezes but `now` keeps advancing, so the
+high-water mark keeps moving toward the (frozen) live edge — the relay keeps
+releasing the held-back reserve at 1× for up to `N` seconds, and OBS never
+starves. When the source resumes, the reserve refills.
+
+**This corrects the original (wrong) reasoning.** An earlier draft assumed a
+static trailing *start* cursor would self-maintain via TCP back-pressure — that
+the consumer reads at ~1× and never catches up. A local validation
+(`tools/fanout-backpressure-check.py`, a real ffmpeg 1× consumer against the real
+`FeedRing`) **disproved it**: with a static start the consumer gulps the backlog
+on join and sits at the live edge — reserve collapsed to ~0.1 s (`--mode join`).
+The continuous high-water cap held the reserve **rock-steady at ~3.16 s** against
+the same consumer (`--mode cap`). The cap — not the join point — is the mechanism.
 
 ### Why this does not reintroduce the ~2 s stale-frame glitch
 
@@ -116,19 +127,31 @@ absolute offset independent of bitrate:
   `[start_offset, live_offset]`. `prebuffer_s <= 0` → `live_offset()` (today's
   behaviour, the clean revert).
 
-The writer still never blocks; `read` / overflow / cursor-snap semantics are
-unchanged. Ring capacity stays **16 MB** — it holds 3–4 s at any realistic bitrate
-and still leaves ~8 s of overflow headroom above the trailing cursor at 10 Mbps
-(revisit only if genuinely high-bitrate feeds appear).
+The writer still never blocks; overflow / cursor-snap semantics are unchanged.
+Ring capacity stays **16 MB** — it holds 3–4 s at any realistic bitrate and still
+leaves ~8 s of overflow headroom above the trailing cursor at 10 Mbps (revisit
+only if genuinely high-bitrate feeds appear).
 
-### 2. `FeedFanoutServer` join change
+`read` gains an optional cap: `read(cursor, timeout, high=None)` returns bytes up
+to `min(high, live_offset)` (waiting on `high`/live like today) — `high=None`
+preserves the current read-to-live-edge behaviour for the un-capped consumers.
 
-The OBS consumer's initial cursor changes from `self.ring.live_offset()` to
-`self.ring.trailing_offset(prebuffer_s, now)`. The rest of the serve loop
-(`read(cursor, timeout)` → `wfile.write(data)`, cursor-snap accounting) is
-unchanged. `prebuffer_s` is passed in from config at consumer construction.
+### 2. `FeedFanoutServer` — trailing start **and** continuous cap
 
-**Per-consumer policy:**
+Two parts, both driven by `prebuffer_s` (passed in from config at construction):
+
+1. **Start** the consumer's cursor at `fanout_join_offset(ring, prebuffer_s, now)`
+   (= `trailing_offset`) instead of the live edge, so the first bytes served are
+   already `N` behind.
+2. **Cap every read** at the trailing high-water mark via a shared helper
+   `fanout_capped_read(ring, cursor, prebuffer_s, now=None)`: when `prebuffer_s > 0`
+   and the ring has a time index it reads `ring.read(cursor, 0.2, high=trailing_offset(prebuffer_s, now))`;
+   otherwise `ring.read(cursor, 1.0)` (live edge). The cap is what actually holds
+   the reserve — it advances at wall-clock 1×, so a greedy consumer cannot read
+   past it, and it keeps releasing the reserve during a source stall. The
+   cursor-snap accounting and `wfile.write` are otherwise unchanged.
+
+**Per-consumer policy** (which consumers get the trailing start + cap):
 
 - **OBS** (the broadcast) → trailing.
 - **Program-audio monitor** (`ProgramAudioService`, on-air feed tap) → **trailing**,
@@ -160,17 +183,25 @@ unchanged. `prebuffer_s` is passed in from config at consumer construction.
 - **Direct-serve fallback (`RACECAST_FEED_FANOUT=0`):** unaffected — there is no
   ring, so no prebuffer; the proven `--player-external-http` path is untouched.
 
-## Fallback B (documented, only if A fails live validation)
+## Why the paced-delivery escalation was folded in
 
-If the local back-pressure test (below) shows OBS **draining** the gap rather than
-holding it at ~N (i.e. OBS reads faster than 1× and closes the reserve), escalate
-to **active paced de-jitter delivery**: the relay rate-limits its writes to OBS to
-~1× playout and refills the reserve from bursts. This guarantees the buffer
-regardless of OBS's read behaviour, at the cost of deriving "1× playout" from a raw
-byte stream (MPEG-TS PCR parsing or a smoothed arrival-rate pacer) and added
-hot-path complexity. Not built unless A is disproven.
+The original plan kept "Fallback B" (active paced de-jitter delivery) in reserve
+in case a static trailing start drained. The validation **did** show it drains
+(§Approach), so the paced idea is now the shipped mechanism — but implemented far
+more cheaply than the original B sketch (no MPEG-TS PCR parsing, no separate pacer
+thread): the wall-clock-advancing `trailing_offset` high-water cap **is** the 1×
+pacer. The cap releases exactly the byte that was live `N` seconds ago, so
+delivery is paced to ~1× for free via the time index already built for the join.
 
 ## Testing
+
+**Unit (CI, stdlib — `tests/`):**
+
+- `read(cursor, timeout, high=…)` caps at `min(high, live)`; `high=None` reads to
+  the live edge (unchanged); at the cap returns `b""`.
+- `fanout_capped_read`: with `prebuffer_s > 0` the returned cursor never passes
+  `trailing_offset(prebuffer_s, now)`; with `prebuffer_s == 0` it reads to the live
+  edge.
 
 **Unit (CI, stdlib — `tests/`):**
 
@@ -185,9 +216,12 @@ hot-path complexity. Not built unless A is disproven.
 - Config parse: default / `0` / invalid / negative.
 - Existing overflow / cursor-snap tests stay green with a trailing initial cursor.
 
-**Local (maintainer, needs ffmpeg, not CI):** the relay serves a paced synthetic
-MPEG-TS feed to a real `ffmpeg` reading at 1×; log `live_offset − consumer_cursor`
-over several minutes. Holds ≈ N → **A confirmed**; drains → **escalate to B**.
+**Local (maintainer, needs ffmpeg, not CI) — `tools/fanout-backpressure-check.py`:**
+feeds the real `FeedRing` from an ffmpeg producer at ~1× and serves it to a real
+ffmpeg 1× consumer, reading the reserve straight off the time index. `--mode join`
+reproduces the static-start failure (reserve ~0.1 s); `--mode cap` exercises the
+shipped continuous cap (held ~3.16 s steady, 2026-07-18). Re-run `--mode cap`
+after any change to the serve loop or the cap helper.
 
 **Controlled live smoke** on one real stream before the next event (never
 mid-event — the relay self-heals and outbound probes against a throttled IP make
@@ -197,7 +231,7 @@ things worse).
 
 | # | Risk | Severity | Mitigation |
 |---|------|----------|-----------|
-| R1 | OBS reads faster than 1× and drains the reserve (A's core assumption) | Medium | Local ffmpeg back-pressure test before shipping; fallback B defined |
+| R1 | A greedy consumer reads ahead and drains the reserve | ~~Medium~~ **Resolved** | Confirmed real: a static trailing *start* drained (0.1 s). Fixed by the continuous wall-clock cap (`fanout_capped_read`), which a consumer cannot outrun; validated at 3.16 s steady (`fanout-backpressure-check.py --mode cap`) |
 | R2 | Default-on adds latency for every producer | Low | 3 s on non-interactive commentary is unnoticeable; `=0` reverts instantly |
 | R3 | Overflow headroom above the trailing cursor shrinks at high bitrate | Low | ~8 s headroom left at 10 Mbps; ring bump is a one-line change if needed |
 | R4 | Reintroduce the ~2 s stale-frame glitch | Low | Bounded fixed offset ≠ growing backlog; `close_when_inactive=True` reconnects fresh |
