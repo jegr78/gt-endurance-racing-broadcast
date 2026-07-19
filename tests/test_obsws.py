@@ -20,6 +20,14 @@ sys.path.insert(0, SCRIPTS)
 spec = importlib.util.spec_from_file_location("obs_ws", os.path.join(SCRIPTS, "obs_ws.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
+# split_audio_targets/apply_split_audio (#534) live in the relay module (they
+# resolve relay.live_feed()), not in obs_ws.py — load it under the same
+# "irofeeds" alias used by tests/test_console_gate.py and tests/test_cockpit.py.
+_relay_spec = importlib.util.spec_from_file_location(
+    "irofeeds", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
+irofeeds = importlib.util.module_from_spec(_relay_spec)
+_relay_spec.loader.exec_module(irofeeds)
+
 
 # --------------------------------------------------------------------------
 # WebSocket plumbing (RFC 6455)
@@ -1444,6 +1452,46 @@ def t_set_stream_service_unreachable_is_note_not_crash():
     ok, note = m.set_stream_service("twitch", "sk", port=free_port,
                                     password="x", timeout=0.5)
     assert ok is False and note
+
+
+# --------------------------------------------------------------------------
+# #534: on-air-aware SPLIT audio (split_audio_targets / apply_split_audio,
+# defined in the relay module — see the "irofeeds" load above).
+# --------------------------------------------------------------------------
+def t_split_audio_targets_A_on_air():
+    assert irofeeds.split_audio_targets("A") == ("Feed A", ["Feed B", "Discord Audio Capture"])
+
+
+def t_split_audio_targets_B_on_air():
+    # the Suzuka bug: B on air must unmute B and mute A (not the reverse)
+    assert irofeeds.split_audio_targets("B") == ("Feed B", ["Feed A", "Discord Audio Capture"])
+
+
+def t_apply_split_audio_mutes_offair_unmutes_onair():
+    calls = []
+
+    class _Obs:
+        def set_input_mute(self, name, muted):
+            calls.append((name, muted)); return True, ""
+
+    class _Relay:
+        def live_feed(self):
+            return "B"
+
+    payload, status = irofeeds.apply_split_audio(_Relay(), _Obs())
+    assert status == 200 and payload["ok"] is True and payload["live"] == "B"
+    assert ("Feed B", False) in calls          # on-air unmuted
+    assert ("Feed A", True) in calls           # off-air muted
+    assert ("Discord Audio Capture", True) in calls
+
+
+def t_apply_split_audio_no_obs_is_503():
+    class _Relay:
+        def live_feed(self):
+            return "A"
+
+    payload, status = irofeeds.apply_split_audio(_Relay(), None)
+    assert status == 503 and payload.get("ok") is not True
 
 
 if __name__ == "__main__":
