@@ -127,12 +127,12 @@ def serve_once(conn, ring, prebuffer_s, feed, join_offset_fn, stop, mode):
                 with feed.lock:
                     feed.sent += len(data)
     except OSError:
-        pass
+        pass                                  # consumer went away / socket closed — end this serve
     finally:
         try:
             conn.close()
         except OSError:
-            pass
+            pass                              # already closed
 
 
 def ffmpeg_producer_cmd(bitrate):
@@ -197,7 +197,7 @@ def main():
                     break
                 ring.write(chunk)
         except (OSError, ValueError):
-            pass
+            pass                              # producer pipe closed / ring closed on teardown
     threading.Thread(target=pump, daemon=True).start()
 
     # --- server: real fanout_join_offset + ring.read, one consumer ------------
@@ -261,11 +261,11 @@ def main():
             try:
                 p.terminate()
             except OSError:
-                pass
+                pass                          # process already exited
         try:
             srv.close()
         except OSError:
-            pass
+            pass                              # listener already closed
         ring.close()
 
     # --- verdict --------------------------------------------------------------
