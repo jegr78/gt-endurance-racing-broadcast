@@ -306,6 +306,16 @@ def t_companion_http_version_reads_sentry_release():
     assert calls[1][0].endswith("/assets/index-CLsR4s7-.js") and calls[1][1] == 65536
 
 
+def t_companion_http_version_reads_backtick_marker():
+    # Companion v5 embeds the release as a template literal (backtick), not a
+    # double-quoted string: SENTRY_RELEASE={id:`5.0.1+9649-stable-<sha>`}.
+    # The parser must accept both quote styles (live-observed on v5.0.1).
+    shell = '<script src="/assets/index-Bp0gTa-1.js"></script>'
+    head = 'var t;e.SENTRY_RELEASE={id:`5.0.1+9649-stable-6acd549dd5`};more'
+    fetch = lambda u, r: shell if u.endswith("/") else head
+    assert m.companion_http_version("http://127.0.0.1:8000", fetch=fetch) == "5.0.1"
+
+
 def t_companion_http_version_missing_script_or_marker():
     assert m.companion_http_version(
         "http://h", fetch=lambda u, r: "<html>no bundle</html>") is None
