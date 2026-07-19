@@ -1494,6 +1494,55 @@ def t_apply_split_audio_no_obs_is_503():
     assert status == 503 and payload.get("ok") is not True
 
 
+class _AliveFakeSock:
+    """Minimal socket stand-in for _Session.alive unit checks (#537 task 1).
+    Distinct from _FakeSock above (that one tracks close()-handshake calls)."""
+
+    def __init__(self, recv_chunks=None, send_raises=False):
+        self._recv = list(recv_chunks or [])
+        self._send_raises = send_raises
+        self.sent = []
+
+    def sendall(self, b):
+        if self._send_raises:
+            raise OSError("broken pipe")
+        self.sent.append(b)
+
+    def recv(self, n):
+        if self._recv:
+            return self._recv.pop(0)
+        return b""                       # EOF
+
+    def settimeout(self, t):
+        pass
+
+    def close(self):
+        pass
+
+
+def t_session_alive_starts_true():
+    s = m._Session(_AliveFakeSock(), b"")
+    assert s.alive is True
+
+
+def t_session_send_marks_dead_on_oserror():
+    s = m._Session(_AliveFakeSock(send_raises=True), b"")
+    try:
+        s.send_json({"x": 1})
+    except OSError:
+        pass  # expected — asserting alive below is the point of this test
+    assert s.alive is False, "send failure must flag the session dead"
+
+
+def t_session_next_json_marks_dead_on_eof():
+    s = m._Session(_AliveFakeSock(recv_chunks=[]), b"")   # recv -> b"" -> EOF
+    try:
+        s.next_json()
+    except ConnectionError:
+        pass  # expected — asserting alive below is the point of this test
+    assert s.alive is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

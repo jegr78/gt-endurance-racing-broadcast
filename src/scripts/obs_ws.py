@@ -338,14 +338,20 @@ class _Session:
         self.sock = sock
         self.buf = buf
         self.counter = 0
+        self.alive = True
 
     def next_json(self):
         """Next text message as JSON; answers pings, raises on close/EOF."""
         while True:
             frame = decode_frame(self.buf)
             if frame is None:
-                chunk = self.sock.recv(65536)
+                try:
+                    chunk = self.sock.recv(65536)
+                except OSError:
+                    self.alive = False
+                    raise
                 if not chunk:
+                    self.alive = False
                     raise ConnectionError("OBS closed the connection")
                 self.buf += chunk
                 continue
@@ -353,12 +359,17 @@ class _Session:
             if opcode == 0x9:                       # ping -> pong
                 self.sock.sendall(encode_frame(payload, opcode=0xA))
             elif opcode == 0x8:
+                self.alive = False
                 raise ConnectionError("OBS closed the connection")
             elif opcode == 0x1:
                 return json.loads(payload)
 
     def send_json(self, obj):
-        self.sock.sendall(encode_frame(json.dumps(obj).encode()))
+        try:
+            self.sock.sendall(encode_frame(json.dumps(obj).encode()))
+        except OSError:
+            self.alive = False
+            raise
 
     def request(self, request_type, request_data):
         self.counter += 1
