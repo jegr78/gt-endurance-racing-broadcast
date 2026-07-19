@@ -68,6 +68,30 @@ def t_select_session_floor_after_all_samples_empty():
     assert rb.select_session(ts, gap_s=1800, floor=999.0) == (None, None)
 
 
+def t_quality_includes_host_metrics():
+    # #536: host CPU/RAM/network (already sampled) surface in the report quality section.
+    samples = [_sample(0.0, sys_cpu_pct=20.0, sys_mem_pct=60.0,
+                       sys_net_down_kbps=3000.0, sys_net_up_kbps=10000.0),
+               _sample(30.0, sys_cpu_pct=40.0, sys_mem_pct=70.0,
+                       sys_net_down_kbps=1000.0, sys_net_up_kbps=12000.0)]
+    q = rb._quality(samples)
+    assert q["sys_cpu_avg"] == 30.0 and q["sys_cpu_peak"] == 40.0, q
+    assert q["sys_mem_avg"] == 65.0 and q["sys_mem_peak"] == 70.0, q
+    # kbps -> Mbps conversion
+    assert q["net_down_avg"] == 2.0 and q["net_down_peak"] == 3.0, q
+    assert q["net_up_avg"] == 11.0 and q["net_up_peak"] == 12.0, q
+    html = rb.render_html(rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0, host="BOX"))
+    assert "Host CPU (%)" in html and "Host RAM (%)" in html, "host rows missing"
+    assert "Net down (Mbps)" in html and "Net up (Mbps)" in html, "net rows missing"
+
+
+def t_quality_host_absent_degrades_to_dashes():
+    # OBS-only samples (no sys_*) still build; host cells fall back to "—".
+    samples = [_sample(0.0, obs_cpu_pct=5.0), _sample(30.0, obs_cpu_pct=6.0)]
+    q = rb._quality(samples)
+    assert q["sys_cpu_avg"] is None and q["net_down_avg"] is None, q
+
+
 def t_build_report_includes_host():
     samples = [_sample(0.0), _sample(30.0)]
     rep = rb.build_report(samples, [], {}, "E", (0.0, 30.0), now=1.0, host="STREAM-BOX")

@@ -112,13 +112,23 @@ def _quality(samples):
     cpu = _num(samples, "obs_cpu_pct")
     fps = _num(samples, "obs_fps")
     rskip = _num(samples, "obs_render_skipped_pct")
-    if not any([kbps, dropped, cong, cpu, fps, rskip]):
+    # #536: host machine metrics (already sampled into health-history.db). Network is
+    # stored as kbps -> shown as Mbps to match btop / readability.
+    sys_cpu = _num(samples, "sys_cpu_pct")
+    sys_mem = _num(samples, "sys_mem_pct")
+    net_down = [v / 1000.0 for v in _num(samples, "sys_net_down_kbps")]
+    net_up = [v / 1000.0 for v in _num(samples, "sys_net_up_kbps")]
+    if not any([kbps, dropped, cong, cpu, fps, rskip, sys_cpu, sys_mem, net_down, net_up]):
         return None
     return {"stream_kbps_avg": _avg(kbps), "stream_kbps_peak": _peak(kbps),
             "dropped_pct_avg": _avg(dropped), "dropped_pct_peak": _peak(dropped),
             "congestion_avg": _avg(cong),
             "obs_cpu_avg": _avg(cpu), "obs_cpu_peak": _peak(cpu),
-            "obs_fps_avg": _avg(fps), "render_skipped_pct_peak": _peak(rskip)}
+            "obs_fps_avg": _avg(fps), "render_skipped_pct_peak": _peak(rskip),
+            "sys_cpu_avg": _avg(sys_cpu), "sys_cpu_peak": _peak(sys_cpu),
+            "sys_mem_avg": _avg(sys_mem), "sys_mem_peak": _peak(sys_mem),
+            "net_down_avg": _avg(net_down), "net_down_peak": _peak(net_down),
+            "net_up_avg": _avg(net_up), "net_up_peak": _peak(net_up)}
 
 
 def _on_air(sample_groups, name_for_stint):
@@ -490,7 +500,11 @@ def render_html(report):
                  ("Congestion", q["congestion_avg"], "—"),
                  ("OBS CPU (%)", q["obs_cpu_avg"], q["obs_cpu_peak"]),
                  ("OBS FPS", q["obs_fps_avg"], "—"),
-                 ("Render skipped (%)", "—", q["render_skipped_pct_peak"])]
+                 ("Render skipped (%)", "—", q["render_skipped_pct_peak"]),
+                 ("Host CPU (%)", q["sys_cpu_avg"], q["sys_cpu_peak"]),
+                 ("Host RAM (%)", q["sys_mem_avg"], q["sys_mem_peak"]),
+                 ("Net down (Mbps)", q["net_down_avg"], q["net_down_peak"]),
+                 ("Net up (Mbps)", q["net_up_avg"], q["net_up_peak"])]
         parts.append(_table(["Metric", "Average", "Peak"],
                             [(m, a if a is not None else "—", p if p is not None else "—")
                              for m, a, p in qrows]))
