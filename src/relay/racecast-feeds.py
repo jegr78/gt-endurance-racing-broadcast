@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, collections, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
+import argparse, collections, csv, datetime, hmac, html, io, ipaddress, json, logging, math, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -380,8 +380,8 @@ def feed_prebuffer_s(environ, default=DEFAULT_FEED_PREBUFFER_S):
         v = float(raw)
     except ValueError:
         return default
-    if v != v or v == float("inf") or v == float("-inf"):
-        return default                       # reject nan/inf -> default (no import needed)
+    if not math.isfinite(v):
+        return default                       # reject nan/inf -> default
     return max(0.0, v)
 
 
