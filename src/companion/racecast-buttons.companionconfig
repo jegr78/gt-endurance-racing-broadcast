@@ -1506,6 +1506,33 @@
            },
            "upgradeIndex": 8,
            "type": "action"
+          },
+          {
+           "id": "zzz-fHilxi0-rjblQL0kt",
+           "definitionId": "get",
+           "connectionId": "BB0jmLMxj_0YwbhwslOiw",
+           "options": {
+            "url": {
+             "value": "http://127.0.0.1:8088/obs/split-audio",
+             "isExpression": false
+            },
+            "header": {
+             "isExpression": false,
+             "value": ""
+            },
+            "jsonResultDataVariable": {
+             "isExpression": false
+            },
+            "result_stringify": {
+             "isExpression": false,
+             "value": true
+            },
+            "statusCodeVariable": {
+             "isExpression": false
+            }
+           },
+           "upgradeIndex": 1,
+           "type": "action"
           }
          ],
          "up": []
