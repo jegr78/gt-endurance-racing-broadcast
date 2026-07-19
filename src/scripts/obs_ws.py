@@ -30,6 +30,7 @@ import os
 import socket
 import struct
 import sys
+import threading
 import urllib.parse
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"   # RFC 6455 magic
@@ -461,6 +462,56 @@ def _connect(host, port, password, timeout):
         return None, f"OBS WebSocket not reachable on {host}:{port} (OBS not running?)"
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return None, str(exc) or exc.__class__.__name__
+
+
+class _ObsConn:
+    """One persistent, lock-guarded obs-websocket session, reused across calls with
+    transparent reconnect-and-retry-once (#537). Best-effort: never raises."""
+
+    def __init__(self, host="127.0.0.1", port=None, password=None, timeout=2.0):
+        self.host, self.port, self.password, self.timeout = host, port, password, timeout
+        self._lock = threading.Lock()
+        self._session = None
+        self._connect_fn = _connect        # test seam
+
+    def _drop(self):
+        s, self._session = self._session, None
+        if s is not None:
+            s.close()
+
+    def _ensure(self):
+        if self._session is not None and not self._session.alive:
+            self._drop()
+        if self._session is None:
+            self._session, _ = self._connect_fn(self.host, self.port, self.password, self.timeout)
+        return self._session
+
+    def run(self, func, *args, **kwargs):
+        with self._lock:
+            result = None
+            for attempt in (0, 1):
+                sess = self._ensure()
+                if sess is None:
+                    return func(*args, **kwargs)      # OBS down -> per-call path -> clean note
+                result = func(*args, session=sess, **kwargs)
+                if sess.alive:
+                    return result                     # success OR request-level failure
+                self._drop()                          # socket died during the call
+                if attempt == 1:
+                    return result                     # already retried once
+            return result
+
+    def close(self):
+        with self._lock:
+            self._drop()
+
+
+class _PassthroughConn:
+    """Kill-switch OFF: connect-per-call, no session reuse (#537)."""
+    def run(self, func, *args, **kwargs):
+        return func(*args, **kwargs)
+    def close(self):
+        pass
 
 
 def _pct(part, total):

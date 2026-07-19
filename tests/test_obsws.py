@@ -1621,6 +1621,99 @@ def t_omitting_session_still_connects_and_closes():
     assert fs.closed is True, "own-session path must close"
 
 
+# --------------------------------------------------------------------------
+# _ObsConn / _PassthroughConn — persistent session holder + kill-switch-off
+# connect-per-call passthrough (#537 task 3)
+# --------------------------------------------------------------------------
+class _ConnFakeSession:
+    """Distinct from the _FakeSession above (that one tracks .sent for the
+    set_current_program_scene-family tests); this one models .alive/.closed/
+    .requests for the _ObsConn holder tests (#537 task 3)."""
+
+    def __init__(self, responses=None):
+        self.responses = dict(responses or {})   # request_type -> responseData
+        self.alive = True
+        self.closed = False
+        self.requests = []
+
+    def request(self, rt, rd=None):
+        self.requests.append((rt, rd or {}))
+        return self.responses.get(rt, {})
+
+    def close(self):
+        self.closed = True
+
+
+def _script_conn(sessions):
+    """An _ObsConn whose _connect yields the given fake sessions in order (then None)."""
+    c = m._ObsConn()
+    seq = list(sessions)
+    def fake_connect(*a, **k):
+        return (seq.pop(0), "") if seq else (None, "OBS down")
+    c._connect_fn = fake_connect      # test seam (see implement note)
+    return c
+
+
+def t_obsconn_reuses_one_session():
+    fs = _ConnFakeSession({"GetVersion": {}})
+    c = _script_conn([fs])
+    calls = {"n": 0}
+    def fn(session=None):
+        calls["n"] += 1
+        session.request("GetVersion", {})
+        return "ok", ""
+    assert c.run(fn) == ("ok", "")
+    assert c.run(fn) == ("ok", "")
+    assert calls["n"] == 2 and len(fs.requests) == 2   # reused: one session, two calls
+
+
+def t_obsconn_reconnects_and_retries_once_on_death():
+    dead = _ConnFakeSession({}); dead.alive = True
+    good = _ConnFakeSession({"GetVersion": {}})
+    c = _script_conn([dead, good])
+    def fn(session=None):
+        if session is dead:
+            session.alive = False          # simulate socket dying mid-call
+            return None, "died"
+        session.request("GetVersion", {})
+        return "ok", ""
+    assert c.run(fn) == ("ok", "")         # retried on the fresh (good) session
+    assert dead.closed is True             # dead one was dropped/closed
+
+
+def t_obsconn_no_retry_on_request_level_failure():
+    fs = _ConnFakeSession({}); fs.alive = True
+    c = _script_conn([fs])
+    calls = {"n": 0}
+    def fn(session=None):
+        calls["n"] += 1
+        return None, "scene not found"     # request-level failure; session stays alive
+    assert c.run(fn) == (None, "scene not found")
+    assert calls["n"] == 1                 # NOT retried
+    assert fs.closed is False
+
+
+def t_obsconn_obs_down_falls_back_to_no_session():
+    c = _script_conn([])                   # _connect always returns (None, ...)
+    seen = {"session": "unset"}
+    def fn(session=None):
+        seen["session"] = session
+        return None, "obs unavailable"
+    assert c.run(fn) == (None, "obs unavailable")
+    assert seen["session"] is None         # called WITHOUT a session (per-call fallback)
+
+
+def t_passthrough_calls_without_session():
+    c = m._PassthroughConn()
+    seen = {"kw": "unset"}
+    def fn(x, session="MISSING"):
+        seen["kw"] = session
+        return x
+    assert c.run(fn, 7) == 7
+    assert seen["kw"] == "MISSING"         # no session kwarg injected
+    c.close()                              # no-op, must not raise
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
