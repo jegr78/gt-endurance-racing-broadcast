@@ -3665,18 +3665,20 @@ class FeedRing:
             return self.live_offset()
         return self.offset_at_age(prebuffer_s, now)
 
-    def read(self, cursor, timeout):
+    def read(self, cursor, timeout, high=None):
         with self._cond:
             live = self._base + len(self._buf)
-            if cursor >= live and not self.closed:
+            limit = live if high is None else min(high, live)
+            if cursor >= limit and not self.closed:
                 self._cond.wait(timeout)
                 live = self._base + len(self._buf)
+                limit = live if high is None else min(high, live)
             if cursor < self._base:        # fell behind → snap to oldest retained byte (lose only overflowed)
                 cursor = self._base
-            if cursor >= live:
+            if cursor >= limit:
                 return b"", cursor
-            data = bytes(self._buf[cursor - self._base:])
-            return data, live
+            data = bytes(self._buf[cursor - self._base: limit - self._base])
+            return data, limit
 
     def close(self):
         with self._cond:
@@ -3693,6 +3695,22 @@ def fanout_join_offset(ring, prebuffer_s, now):
     if hasattr(ring, "live_offset"):
         return ring.live_offset()
     return 0
+
+
+def fanout_capped_read(ring, cursor, prebuffer_s, now=None,
+                       timeout_capped=0.2, timeout_live=1.0):
+    """One read for a trailing broadcast consumer (#533): when prebuffer_s > 0 and
+    the ring has a time index, cap the read at the trailing high-water mark
+    trailing_offset(prebuffer_s, now) -- it advances at wall-clock 1x, so a greedy
+    consumer cannot outrun it and the held-back reserve is released during a source
+    stall. Otherwise read to the live edge. Returns (data, new_cursor). now is
+    injected for tests."""
+    if prebuffer_s > 0 and hasattr(ring, "trailing_offset"):
+        if now is None:
+            now = time.monotonic()
+        high = ring.trailing_offset(prebuffer_s, now)
+        return ring.read(cursor, timeout_capped, high=high)
+    return ring.read(cursor, timeout_live)
 
 
 class FeedFanoutServer:
@@ -3745,7 +3763,7 @@ class FeedFanoutServer:
                 self._consumers[cid] = {"cycle_ts": time.monotonic(), "snaps": 0}
             while not self._stop and not self.ring.closed:
                 prev = cursor
-                data, cursor = self.ring.read(cursor, timeout=1.0)
+                data, cursor = fanout_capped_read(self.ring, cursor, self.prebuffer_s)
                 skipped = snap_bytes(prev, cursor, len(data))
                 with self._consumers_lock:
                     st = self._consumers.get(cid)
@@ -4026,7 +4044,8 @@ class ProgramAudioService:
         cursor = self._join_offset(ring, time.monotonic())   # #533: match OBS's trailing join
         try:
             while not self._stop.is_set() and not getattr(ring, "closed", False):
-                data, cursor = ring.read(cursor, 1.0)
+                data, cursor = fanout_capped_read(
+                    ring, cursor, getattr(self.relay, "feed_prebuffer_s", 0.0))
                 if data:
                     stdin.write(data); stdin.flush()
                 if proc is None or proc.poll() is not None:

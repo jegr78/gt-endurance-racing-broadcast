@@ -454,6 +454,42 @@ def t_fanout_server_join_uses_prebuffer():
     assert srv._join_offset(now=9.0) == 700
 
 
+def t_ring_read_high_caps_at_offset():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1, high=400)
+    assert cur == 400 and len(data) == 400
+
+
+def t_ring_read_high_none_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1)                 # high omitted -> live edge (unchanged)
+    assert cur == 1000 and len(data) == 1000
+
+
+def t_ring_read_at_cap_returns_empty():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(400, 0.05, high=400)    # cursor already at the cap
+    assert data == b"" and cur == 400
+
+
+def t_fanout_capped_read_holds_below_trailing():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))      # live=1000; trailing(3,9)=700
+    data, cur = m.fanout_capped_read(r, 0, 3.0, now=9.0)
+    assert cur == 700 and len(data) == 700     # capped at the trailing high-water
+
+
+def t_fanout_capped_read_zero_prebuffer_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    data, cur = m.fanout_capped_read(r, 0, 0.0, now=5.0)
+    assert cur == 500 and len(data) == 500
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
