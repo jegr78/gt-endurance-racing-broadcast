@@ -66,7 +66,7 @@ Controls (HTTP, for Companion Generic-HTTP / browser / curl):
   Stop: Ctrl+C
 """
 
-import argparse, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
+import argparse, collections, csv, datetime, hmac, html, io, ipaddress, json, logging, os, random, re, secrets, shutil, signal, socket, ssl, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, quote, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -341,6 +341,8 @@ _HEALTH_LABEL = {"green": "OK", "yellow": "DEGRADED", "red": "CRITICAL"}
 # ---------- Feed fan-out stall detection (relay feed multiplexing, #358) --------
 FANOUT_STALL_S = 8.0   # seconds without a byte from streamlink before a fan-out reader is "stalled"
 FANOUT_RING_BYTES = 16 * 1024 * 1024  # per-feed ring window (bounded; ≈12 s at 10 Mbps). #488: 8→16 MB headroom so the auto-resync fires an orderly rebuild below the hard cursor-snap.
+MARK_MIN_INTERVAL_S = 0.1        # #533: throttle the FeedRing time index to ~1 mark/100 ms
+DEFAULT_FEED_PREBUFFER_S = 3.0   # #533: seconds a broadcast consumer joins behind the fan-out live edge
 AUTORESYNC_DEBOUNCE_POLLS = 2  # #488: consecutive heartbeat polls over the skip-rate threshold before an auto-resync fires
 _FANOUT_FALSEY = {"0", "false", "no", "off"}
 
@@ -3590,10 +3592,11 @@ class FeedRing:
         self.capacity = capacity
         self._buf = bytearray()
         self._base = 0                 # absolute offset of self._buf[0]
+        self._marks = collections.deque()   # #533: (live_offset, monotonic_ts) samples, throttled+pruned
         self._cond = threading.Condition()
         self.closed = False
 
-    def write(self, data):
+    def write(self, data, now=None):
         if not data:
             return
         with self._cond:
@@ -3602,7 +3605,20 @@ class FeedRing:
             if overflow > 0:
                 del self._buf[:overflow]
                 self._base += overflow
+            live = self._base + len(self._buf)
+            self._record_mark(live, now)     # #533: time index for trailing joins
             self._cond.notify_all()
+
+    def _record_mark(self, live, now):
+        # Caller holds self._cond. Sample the live edge at most once per
+        # MARK_MIN_INTERVAL_S, then drop marks that have scrolled out of the
+        # retained window (offset <= base). Pure aside from the default clock.
+        if now is None:
+            now = time.monotonic()
+        if not self._marks or (now - self._marks[-1][1]) >= MARK_MIN_INTERVAL_S:
+            self._marks.append((live, now))
+        while self._marks and self._marks[0][0] <= self._base:
+            self._marks.popleft()
 
     def live_offset(self):
         with self._cond:
@@ -3611,6 +3627,29 @@ class FeedRing:
     def start_offset(self):
         with self._cond:
             return self._base
+
+    def offset_at_age(self, age_s, now):
+        """The absolute offset that was the live edge ~age_s ago (the newest mark
+        with ts <= now-age_s), clamped to the retained window. When the ring holds
+        less than age_s of history it returns start_offset (serve the oldest
+        retained byte). Pure — now is injected."""
+        with self._cond:
+            live = self._base + len(self._buf)
+            target = now - age_s
+            chosen = self._base
+            for off, ts in self._marks:
+                if ts <= target:
+                    chosen = off
+                else:
+                    break
+            return min(max(self._base, chosen), live)
+
+    def trailing_offset(self, prebuffer_s, now):
+        """The join offset prebuffer_s seconds behind the live edge (#533);
+        the live edge itself when prebuffer_s <= 0 (today's behaviour)."""
+        if prebuffer_s <= 0:
+            return self.live_offset()
+        return self.offset_at_age(prebuffer_s, now)
 
     def read(self, cursor, timeout):
         with self._cond:

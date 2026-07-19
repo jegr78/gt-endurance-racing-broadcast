@@ -368,6 +368,49 @@ def t_feed_freeze_tuning_getter_defaults():
     assert m.feed_freeze_cooldown_s({"RACECAST_FEED_FREEZE_COOLDOWN_S": "x"}) == 60.0
 
 
+def t_ring_trailing_offset_holds_reserve():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):                     # write 100 bytes/s; live edge = (i+1)*100
+        r.write(b"x" * 100, now=float(i))
+    # 3 s behind now=9 -> newest mark with ts<=6 is (700, 6)
+    assert r.trailing_offset(3.0, now=9.0) == 700
+
+
+def t_ring_offset_at_age_clamps_to_start_when_young():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 100, now=0.0)
+    r.write(b"x" * 100, now=0.5)            # only 0.5 s of history
+    assert r.offset_at_age(3.0, now=0.5) == r.start_offset() == 0
+
+
+def t_ring_trailing_offset_zero_is_live_edge():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    assert r.trailing_offset(0.0, now=5.0) == r.live_offset() == 500
+
+
+def t_ring_marks_throttled():
+    r = m.FeedRing(10_000)
+    for i in range(20):                     # 20 writes 10 ms apart = 0.19 s span
+        r.write(b"x" * 10, now=i * 0.01)
+    assert len(r._marks) <= 3               # MARK_MIN_INTERVAL_S=0.1 -> ~2-3 marks
+
+
+def t_ring_marks_pruned_on_overflow():
+    r = m.FeedRing(250)
+    for i in range(10):                     # 1 s apart -> each its own mark
+        r.write(b"x" * 100, now=float(i))
+    assert r.start_offset() == 750          # 1000 written, cap 250
+    assert all(off > 750 for off, _ in r._marks)   # scrolled-out marks pruned
+
+
+def t_ring_write_still_works_without_now():
+    r = m.FeedRing(1024)                     # production writer passes no `now`
+    r.write(b"abc")
+    data, cur = r.read(0, timeout=0.1)
+    assert data == b"abc" and cur == 3
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
