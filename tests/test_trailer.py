@@ -57,10 +57,13 @@ def t_companion_has_trailer_button():
     assert (target.get("style") or {}).get("text") == "TRAILER", target.get("style")
 
 
-def t_companion_red_flag_still_present():
-    # RED FLAG moved slots but must still exist (it also lives on PAGE 3).
-    raw = _read(os.path.join("src", "companion", "racecast-buttons.companionconfig"))
-    assert "RED\\nFLAG" in raw, "RED FLAG button disappeared"
+def t_companion_red_flag_moved_to_4_3():
+    # RED FLAG vacated PAGE 1 slot 0/7 (now TRAILER) and moved to the first free
+    # slot 4/3 — verify the exact relocation, not just that the label survives.
+    cfg = json.loads(_read(os.path.join("src", "companion", "racecast-buttons.companionconfig")))
+    controls = cfg["pages"]["1"]["controls"]
+    assert controls["0"]["7"]["style"]["text"] == "TRAILER", "slot 0/7 should now be TRAILER"
+    assert controls["4"]["3"]["style"]["text"] == "RED\nFLAG", "RED FLAG must sit at 4/3"
 
 
 if __name__ == "__main__":
