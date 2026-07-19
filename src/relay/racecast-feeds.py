@@ -6237,6 +6237,8 @@ class Relay:
                 "health_level": self.health_level, "health_reasons": self.health_reasons,
                 "feed_a_state": a_state, "feed_a_down": a_down, "feed_a_stint": a_stint,
                 "feed_b_state": b_state, "feed_b_down": b_down, "feed_b_stint": b_stint,
+                "feed_a_max_gap_s": self._interval_max_gaps.get("A"),
+                "feed_b_max_gap_s": self._interval_max_gaps.get("B"),
                 "pov_state": (None if not self.pov else
                               ("stopped" if self.pov.paused else self.pov.phase)),
                 "obs_reachable": (None if self.obs_reachable is None
