@@ -190,13 +190,15 @@ Expected: FAIL — jitter reason absent (level green).
 ```
 (Place it with the other `yellow.append(...)` lines so it rolls into the same level logic.)
 
-(b) `Relay.__init__` (near the other #488/#533 config, ~line 6014):
+(b) `Relay.__init__` (near the other fan-out config, after `self.fanout = fanout_enabled(os.environ)` ~line 6027):
 ```python
+        self._prebuffer_s = feed_prebuffer_s(os.environ)   # #533 reserve, reused as the #535 threshold
         self._stall_signal = feed_stall_signal_enabled(os.environ)
         self._stall_floor = feed_stall_floor_s(os.environ)
         self._interval_max_gaps = {}      # #535: last heartbeat's per-feed max inbound gap
         self._jittery_feeds = []          # #535: feeds whose last-interval gap tripped the signal
 ```
+(If a `self._prebuffer_s` / prebuffer attribute already exists from #533, reuse it — do not add a duplicate; use the existing name in step 3(e).)
 
 (c) `_health_facts` return dict — add:
 ```python
@@ -225,7 +227,7 @@ Expected: FAIL — jitter reason absent (level green).
             self._maybe_probe_obs(now)
             self._sample_connectivity()
             # #535: read+reset each feed's interval max gap once per tick, classify jitter.
-            pb = self.feed_prebuffer_s
+            pb = self._prebuffer_s
             gaps, jittery = {}, []
             for _nm, _f in self.feeds.items():
                 g = _f.take_max_inbound_gap()
@@ -266,38 +268,57 @@ git commit -m "feat(relay): quiet-yellow inbound-stall health (display vs notify
 
 ### Task 3: DB columns + heartbeat snapshot sampling
 
+`health_store.py` is **function-based** (no `HealthStore` class): `hs.open_db(path)`, `hs.migrate(conn)`, `hs.record(conn, snap, "tick")`, `hs.query_range(conn, lo, hi)`, `hs.numeric_series([rows])`, `SCHEMA_VERSION`. Columns are declared in a `COLUMNS` tuple + a `_CREATE` DDL string; upgrades to existing DBs use versioned `_V<N>_COLUMNS` tuples applied in `migrate()`.
+
 **Files:**
-- Modify: `src/scripts/health_store.py` — `NUMERIC_FIELDS` (~line 44), `COLUMNS`/`_MIGRATIONS` (~line 54/107), the `CREATE TABLE` DDL (~line 84)
-- Modify: `src/relay/racecast-feeds.py` — `_health_snapshot` (~6150) add the two fields from `self._interval_max_gaps`
+- Modify: `src/scripts/health_store.py` — `COLUMNS` (line 25-46), `NUMERIC_FIELDS` (line 52-58), `_CREATE` DDL (line 66-86), a new `_V8_COLUMNS` after `_V7_COLUMNS` (line 124-126) + include it in the `migrate()` loop (line 144), and bump `SCHEMA_VERSION` (line 16) from 7 to 8
+- Modify: `src/relay/racecast-feeds.py` — `_health_snapshot` (~6221 return dict) add the two fields from `self._interval_max_gaps`
 - Test: `tests/test_health_store.py`
 
 **Interfaces:**
+- Consumes: `Relay._interval_max_gaps` (Task 2).
 - Produces: DB columns `feed_a_max_gap_s`, `feed_b_max_gap_s` (REAL), sampled each heartbeat.
 
-- [ ] **Step 1: Write the failing test** (append to `tests/test_health_store.py`, mirroring its existing insert/read round-trip helper)
+- [ ] **Step 1: Write the failing test** (append to `tests/test_health_store.py`, mirroring `t_new_fields_round_trip` at line 266 exactly — same open/migrate/record/query_range shape)
 
 ```python
 def t_max_gap_columns_round_trip():
     import tempfile, os as _os
     d = tempfile.mkdtemp()
-    store = hs.HealthStore(_os.path.join(d, "h.db"))
-    store.record_tick({"feed_a_max_gap_s": 2.5, "feed_b_max_gap_s": 0.0}, 100.0)
-    rows = store.samples_since(0.0)
-    assert rows and rows[-1]["feed_a_max_gap_s"] == 2.5 and rows[-1]["feed_b_max_gap_s"] == 0.0
+    conn = hs.open_db(_os.path.join(d, "h.db"))
+    try:
+        hs.migrate(conn)
+        hs.record(conn, {"ts": 5.0, "health_level": "green",
+                         "feed_a_max_gap_s": 2.5, "feed_b_max_gap_s": 0.0}, "tick")
+        got = hs.query_range(conn, 0, 10)[0]
+        assert got["feed_a_max_gap_s"] == 2.5 and got["feed_b_max_gap_s"] == 0.0
+        series = hs.numeric_series([got])
+        assert "feed_a_max_gap_s" in series           # NUMERIC_FIELDS wired
+    finally:
+        conn.close()
 ```
-(If `HealthStore`/`samples_since` have different names in the file, use the file's real API — read its existing round-trip test and copy the pattern exactly; do not invent methods.)
 
 - [ ] **Step 2: Run — confirm RED**
 
 Run: `python3 tests/test_health_store.py`
-Expected: FAIL — column/key missing.
+Expected: FAIL — `KeyError`/missing column `feed_a_max_gap_s`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement** (all in `health_store.py` unless noted)
 
-- Add `"feed_a_max_gap_s"`, `"feed_b_max_gap_s"` to `NUMERIC_FIELDS` (~44) and `COLUMNS` (~54) in the same style as the neighbours.
-- Add to the `CREATE TABLE` DDL (~84) next to `sys_disk_free_mb`: `feed_a_max_gap_s REAL, feed_b_max_gap_s REAL`.
-- Add both to the `_MIGRATIONS`/additive `ALTER TABLE ADD COLUMN` list (~107-115) so existing DBs gain the columns.
-- In `_health_snapshot` (racecast-feeds.py ~6150), add to the returned dict:
+- Bump `SCHEMA_VERSION = 7` → `SCHEMA_VERSION = 8` (line 16).
+- Append `"feed_a_max_gap_s", "feed_b_max_gap_s"` to `COLUMNS` (after `"sys_disk_free_mb",` line 45).
+- Append `"feed_a_max_gap_s", "feed_b_max_gap_s"` to `NUMERIC_FIELDS` (after `"sys_disk_free_mb")` line 58).
+- In the `_CREATE` DDL, change the last samples column line (line 85) from
+  `    sys_net_down_kbps REAL, sys_disk_free_mb REAL` to
+  `    sys_net_down_kbps REAL, sys_disk_free_mb REAL,\n    feed_a_max_gap_s REAL, feed_b_max_gap_s REAL`.
+- After `_V7_COLUMNS` (line 124-126) add:
+```python
+_V8_COLUMNS = (
+    ("feed_a_max_gap_s", "REAL"), ("feed_b_max_gap_s", "REAL"),   # #535 inbound stall
+)
+```
+- In `migrate()` (line 144) extend the loop tuple: `for name, decl in _V3_COLUMNS + _V5_COLUMNS + _V6_COLUMNS + _V7_COLUMNS + _V8_COLUMNS:`.
+- In `_health_snapshot` (racecast-feeds.py, after the `"feed_b_state"/"feed_b_stint"` line ~6224), add to the returned dict:
 ```python
                 "feed_a_max_gap_s": self._interval_max_gaps.get("A"),
                 "feed_b_max_gap_s": self._interval_max_gaps.get("B"),
@@ -305,7 +326,7 @@ Expected: FAIL — column/key missing.
 
 - [ ] **Step 4: Run — confirm GREEN + commit**
 
-Run: `python3 tests/test_health_store.py`
+Run: `python3 tests/test_health_store.py` then `python3 tests/test_pov.py`
 Expected: PASS.
 ```bash
 git add src/scripts/health_store.py src/relay/racecast-feeds.py tests/test_health_store.py
