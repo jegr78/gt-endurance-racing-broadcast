@@ -514,6 +514,11 @@ class _PassthroughConn:
         pass
 
 
+# The two routing registries the relay's _RelayObsFacade reads off this module
+# (via getattr(target, "_ROUTED_FNS"/"_SHOT_FNS")) to decide which calls go through
+# a persistent _ObsConn and which connection carries them (#537). _SHOT_FNS ride the
+# dedicated screenshot connection; the rest of _ROUTED_FNS ride the shared control
+# connection; everything else (constants, pure helpers) is a direct module call.
 _SHOT_FNS = frozenset({"get_program_screenshot", "get_source_screenshot"})
 _ROUTED_FNS = _SHOT_FNS | frozenset({
     "read_obs_state", "get_health_stats", "get_current_program_scene",
@@ -523,26 +528,6 @@ _ROUTED_FNS = _SHOT_FNS | frozenset({
     "release_feed_inputs", "feed_media_cursors", "get_scene_collection",
     "set_scene_collection",
 })
-
-
-class _ObsFacade:
-    """Routes the relay's obs_ws.* calls through two persistent holders (#537):
-    screenshots on one connection, control/read on the other. Non-routed attributes
-    (constants, pure helpers) pass straight through to the module."""
-
-    def __init__(self, shot, ctrl, module):
-        self._shot, self._ctrl, self._m = shot, ctrl, module
-
-    def __getattr__(self, name):
-        if name in _ROUTED_FNS:
-            conn = self._shot if name in _SHOT_FNS else self._ctrl
-            fn = getattr(self._m, name)
-            return lambda *a, **k: conn.run(fn, *a, **k)
-        return getattr(self._m, name)
-
-    def close(self):
-        self._shot.close()
-        self._ctrl.close()
 
 
 def _pct(part, total):

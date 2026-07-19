@@ -1721,27 +1721,51 @@ class _RecordConn:
     def close(self): self.calls.append(("closed", (), {}))
 
 
-def t_facade_routes_screenshot_vs_control():
+# The shipped facade is the relay's _RelayObsFacade (racecast-feeds.py), which
+# late-binds the relay module's `_obs_ws` name; in this test that name is the real
+# obs_ws module (irofeeds._obs_ws, exposing _ROUTED_FNS), so routed names go through
+# the holders and everything else delegates straight to that module.
+_RMOD = irofeeds._obs_ws
+
+
+def t_relay_facade_routes_screenshot_vs_control():
     shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
-    fac = m._ObsFacade(shot, ctrl, m)
-    assert fac.get_program_screenshot(width=640) == "shot"
-    assert fac.set_input_mute("Feed A", True) == "ctrl"
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    assert fac.get_program_screenshot(width=640) == "shot"   # _SHOT_FNS -> shot conn
+    assert fac.set_input_mute("Feed A", True) == "ctrl"      # other _ROUTED_FNS -> ctrl conn
     assert shot.calls[0][0] == "get_program_screenshot"
     assert ctrl.calls[0][0] == "set_input_mute"
 
 
-def t_facade_passes_through_non_routed_attrs():
+def t_relay_facade_passes_through_non_routed_attrs():
     shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
-    fac = m._ObsFacade(shot, ctrl, m)
-    assert fac.STINT_SCENE is m.STINT_SCENE              # constant pass-through
-    assert fac.stream_kbps is m.stream_kbps             # pure helper pass-through (not routed)
-    assert not shot.calls and not ctrl.calls
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    assert fac.STINT_SCENE is _RMOD.STINT_SCENE          # constant pass-through
+    assert fac.stream_kbps is _RMOD.stream_kbps          # pure helper pass-through (not routed)
+    assert not shot.calls and not ctrl.calls             # neither holder was used
 
 
-def t_facade_close_closes_both():
+def t_relay_facade_close_closes_both():
     shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
-    m._ObsFacade(shot, ctrl, m).close()
+    irofeeds._RelayObsFacade(shot, ctrl).close()
     assert shot.calls[-1][0] == "closed" and ctrl.calls[-1][0] == "closed"
+
+
+def t_relay_facade_direct_call_when_module_swapped_to_fake():
+    # A fake _obs_ws (no _ROUTED_FNS) -> the facade calls it DIRECTLY (no session=,
+    # no holder.run) — the safeguard that keeps unit tests off a real OBS socket.
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = irofeeds._RelayObsFacade(shot, ctrl)
+    class _FakeMod:
+        def set_input_mute(self, *a, **k): return ("fake", k)
+    orig = irofeeds._obs_ws
+    irofeeds._obs_ws = _FakeMod()
+    try:
+        got = fac.set_input_mute("Feed A", True)
+    finally:
+        irofeeds._obs_ws = orig
+    assert got == ("fake", {}), got                      # direct call, NO session= injected
+    assert not shot.calls and not ctrl.calls             # holders untouched
 
 
 def t_feed_media_cursors_accepts_session():
