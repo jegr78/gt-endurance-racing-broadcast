@@ -1740,6 +1740,16 @@ def t_obs_page_paths_relay_mirror_in_sync():
     assert tuple(feeds.OBS_PAGE_PATHS) == tuple(m.OBS_PAGE_PATHS)
 
 
+def t_obs_ws_persist_default_on():
+    # #537: persistent obs-websocket connections default ON; a falsey
+    # RACECAST_OBS_WS_PERSIST restores connect-per-call. Pure -> unit-tested.
+    spec2 = importlib.util.spec_from_file_location(
+        "feeds_persist", os.path.join(ROOT, "src", "relay", "racecast-feeds.py"))
+    feeds = importlib.util.module_from_spec(spec2); spec2.loader.exec_module(feeds)
+    assert feeds.obs_ws_persist_enabled({}) is True
+    assert feeds.obs_ws_persist_enabled({"RACECAST_OBS_WS_PERSIST": "0"}) is False
+
+
 def t_relay_runtime_args_adds_overlay_when_dir_exists():
     import tempfile, os
     with tempfile.TemporaryDirectory() as tmp:
