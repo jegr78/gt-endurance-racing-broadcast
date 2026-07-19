@@ -1031,6 +1031,15 @@ def t_profile_env_vars_includes_event_title():
     assert "RACECAST_EVENT_TITLE" not in m._profile_env_vars(rc2)
 
 
+def t_profile_env_vars_includes_trailer_url():
+    rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
+                               trailer_url="https://youtu.be/TTT")
+    assert m._profile_env_vars(rc)["RACECAST_TRAILER_URL"] == "https://youtu.be/TTT"
+    # empty -> filtered out
+    rc2 = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc")
+    assert "RACECAST_TRAILER_URL" not in m._profile_env_vars(rc2)
+
+
 def t_profile_env_vars_includes_discord_webhook():
     rc = m.pcfg.ResolvedConfig(profile="demo", name="Demo", sheet_id="abc",
                                discord_webhook_url="https://discord.com/api/webhooks/1/x")
