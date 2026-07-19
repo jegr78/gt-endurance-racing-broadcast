@@ -3678,6 +3678,10 @@ class FeedRing:
                 limit = live if high is None else min(high, live)
             if cursor < self._base:        # fell behind → snap to oldest retained byte (lose only overflowed)
                 cursor = self._base
+            # `limit` may be below `cursor` (e.g. a trailing `high` computed just
+            # before `base` overflowed past it, #533): the empty return below guards
+            # it — the slice is never reached with a negative bound. Self-corrects
+            # next cycle on a fresh `high`.
             if cursor >= limit:
                 return b"", cursor
             data = bytes(self._buf[cursor - self._base: limit - self._base])

@@ -151,9 +151,10 @@ def main():
                     help="seconds ignored after consumer start (probe gulp) (default 12)")
     ap.add_argument("--bitrate", default="2500k", help="producer video bitrate (default 2500k)")
     ap.add_argument("--port", type=int, default=0, help="loopback serve port (default: ephemeral)")
-    ap.add_argument("--mode", choices=("join", "cap"), default="join",
-                    help="join = shipped trailing-START cursor (approach A); "
-                         "cap = proposed continuous trailing CAP on every read")
+    ap.add_argument("--mode", choices=("join", "cap"), default="cap",
+                    help="cap (default) = the SHIPPED continuous trailing cap — validates "
+                         "production; join = the disproven static-start path, kept as the "
+                         "failure-repro contrast (exits FAIL by design)")
     args = ap.parse_args()
 
     if not shutil.which("ffmpeg"):
