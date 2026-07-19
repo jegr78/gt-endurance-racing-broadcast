@@ -297,7 +297,8 @@ def companion_http_version(base_url="http://127.0.0.1:8000", fetch=_http_fetch):
     """Installed Companion version from its running web server, or None. Companion
     serves no version REST endpoint, but its built frontend embeds the release as
     `SENTRY_RELEASE={id:"<ver>+<build>-<channel>-<sha>"}` in the first ~1 KB of
-    its main bundle. Fetch the SPA shell to find the content-hashed bundle name,
+    its main bundle (Companion v5 switched the quote to a backtick template literal,
+    `id:`<ver>+…``; both are accepted). Fetch the SPA shell to find the content-hashed bundle name,
     then a small Range GET of its head to read the marker. This is the only version
     source for the companion-pi Linux service and for WSL/Docker setups where
     Companion runs on another host — it works wherever Companion is reachable.
@@ -312,7 +313,7 @@ def companion_http_version(base_url="http://127.0.0.1:8000", fetch=_http_fetch):
         if not bundle:
             return None
         head = fetch(base + bundle, 65536)
-        marker = re.search(r'SENTRY_RELEASE=\{id:"(\d+\.\d+\.\d+)', head)
+        marker = re.search(r'SENTRY_RELEASE=\{id:["\'`](\d+\.\d+\.\d+)', head)
         return marker.group(1) if marker else None
     except Exception:   # noqa: BLE001 — Companion unreachable / markup changed -> unknown
         return None
