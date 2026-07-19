@@ -182,7 +182,7 @@ python3 src/racecast.py speedtest          # opt-in Ookla bandwidth test; logs l
 python3 src/racecast.py cookies firefox          # refresh YouTube cookies before an event (Firefox recommended; Windows Chrome/Edge exports are blocked by app-bound encryption)
 python3 src/racecast.py cookies twitch firefox   # refresh Twitch cookies (only needed for gated sub/follower-only Twitch feeds)
 python3 src/racecast.py graphics          # download broadcast graphics -> runtime/<profile>/graphics/
-python3 src/racecast.py media             # download Intro/Outro clips -> runtime/<profile>/media/
+python3 src/racecast.py media             # download Intro/Outro/Trailer clips -> runtime/<profile>/media/
 python3 src/racecast.py brands            # download per-league brand-logo overrides (Sheet "Brands" tab) -> runtime/<profile>/brands/
 python3 src/racecast.py setup --out runtime/<profile>/GT_Endurance.import.json   # localize OBS collection
 python3 src/racecast.py install-tools     # install yt-dlp/streamlink/ffmpeg/deno (winget/brew/apt — Linux apt runs via sudo; deno has no apt pkg so it's a pinned, SHA-256-verified GitHub-release download into runtime/bin, which racecast adds to PATH; bootstraps brew on macOS); --update also upgrades installed ones (pre-event)
@@ -244,7 +244,7 @@ Config comes from **two layers** and one resolver:
 - **`profiles/<name>/profile.env`** is the **league** — un-prefixed keys `NAME`,
   `SHEET_ID` (Google Sheet driving schedule + HUD), `SHEET_PUSH_URL` (optional Apps
   Script webhook that lets the relay write to the Sheet: race-timer state + the
-  panel's HUD/Schedule/POV controls), `INTRO_URL`, `OUTRO_URL`, `LOGO`,
+  panel's HUD/Schedule/POV controls), `INTRO_URL`, `OUTRO_URL`, `TRAILER_URL`, `LOGO`,
   `OBS_COLLECTION`, `CONSOLE_SECRET` (signs per-person console tokens; auto-provisioned
   on first relay start), and optionally `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
   (per-league Discord OAuth app — when present, `/console/login` + `/console/oauth/callback`
@@ -258,7 +258,7 @@ Config comes from **two layers** and one resolver:
 exactly one exists), and returns a `ResolvedConfig`. The CLI then **injects** the
 active league's values into child processes as **prefixed** env vars
 (`RACECAST_SHEET_ID`, `RACECAST_SHEET_PUSH_URL`, `RACECAST_INTRO_URL`,
-`RACECAST_OUTRO_URL`, `RACECAST_OBS_COLLECTION` — see `_profile_env_vars` /
+`RACECAST_OUTRO_URL`, `RACECAST_TRAILER_URL`, `RACECAST_OBS_COLLECTION` — see `_profile_env_vars` /
 `_apply_active_profile_env` in `src/racecast.py`), so the relay and the asset
 downloaders read a flat environment and stay profile-agnostic. `racecast profile
 list|show|use|new|export|import [--from/--no-assets/--out/--force]` manages profiles;
@@ -301,7 +301,7 @@ freeport 8088`).
 
 ### Two token round-trips (keep paths/secrets out of git)
 - **OBS.** `src/obs/GT_Endurance.json` stores tokens: `__RACECAST_GRAPHICS__` (broadcast
-  still-graphics dir) and `__RACECAST_MEDIA__` (Intro/Outro clip dir). The HUD and the
+  still-graphics dir) and `__RACECAST_MEDIA__` (Intro/Outro/Trailer clip dir). The HUD and the
   race timer are relay-served on the fixed loopback (`127.0.0.1:8088`, no token) — the
   Sheet URL is no longer embedded in the collection (the relay reads `SHEET_ID` from the
   active profile). Timer state = Sheet tab `Timer` + `runtime/timer.json`,
@@ -326,10 +326,11 @@ freeport 8088`).
   importable collection at `runtime/<profile>/GT_Endurance.import.json`, naming it the
   league's `OBS_COLLECTION` (default `GT Endurance Racing — <league>`). OBS stores
   **absolute** paths, so the localized collection must not be moved after import.
-  `src/relay/get-media.py` downloads the Intro/Outro clips (sheet-driven via the Assets
-  tab `Intro Video`/`Outro Video` labels, or `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL`
-  env overrides) into `runtime/<profile>/media/`; the `Intro`/`Outro` OBS scenes play
-  them looping with audio.
+  `src/relay/get-media.py` downloads the Intro/Outro/Trailer clips (sheet-driven via the
+  Assets tab `Intro Video`/`Outro Video`/`Trailer Video` labels, or
+  `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL`/`RACECAST_TRAILER_URL` env overrides) into
+  `runtime/<profile>/media/`; the `Intro`/`Outro`/`Trailer` OBS scenes play them looping
+  with audio.
   The localized export also **syncs the per-league POV-box position**: `setup-assets.py`
   reads the active profile's `overlay/hud.css` (`--overlay-css`, passed by the CLI) and
   applies its `#pov` box (`left/top/width/height`) onto the OBS **"Feed POV"** scene item
@@ -339,12 +340,12 @@ freeport 8088`).
   PiP immediately without a re-import. POV-only (`overlay_build.OVERLAY_SLOT_OBS_SOURCES`);
   best-effort — a missing overlay/OBS leaves today's behavior. Pure parser:
   `overlay_build.pov_box_from_css`. Spec: `docs/superpowers/specs/2026-06-26-pov-box-obs-sync-design.md`.
-- **Broadcast graphics are pure-runtime** (same model as the Intro/Outro clips): the
+- **Broadcast graphics are pure-runtime** (same model as the Intro/Outro/Trailer clips): the
   still-graphics (Overlay, Standings, Schedule, Race/Quali Results, the three weather
   overlays, Standby, …) are **never committed**. `python3 src/relay/get-graphics.py`
   downloads each one from the Sheet **Assets** tab into
   `runtime/<profile>/graphics/<Label>.png` (the Sheet label *is* the filename — no
-  mapping table; YouTube Intro/Outro rows are skipped). They are tokenised
+  mapping table; YouTube Intro/Outro/Trailer rows are skipped). They are tokenised
   `__RACECAST_GRAPHICS__/<Label>.png` in the collection and resolved by
   `setup-assets.py` (which warns, never fails, on a missing file → OBS shows black until
   you run `get-graphics.py`). `src/assets/` therefore holds **only** the HUD `flags/` +

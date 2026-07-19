@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Download the stream Intro/Outro clips and Intermission Music for OBS.
+"""Download the stream Intro/Outro/Trailer clips and Intermission Music for OBS.
 
-URL resolution priority per clip:  --intro-url/--outro-url  >  env
-RACECAST_INTRO_URL/RACECAST_OUTRO_URL  >  Google Sheet 'Assets' tab (a cell whose
-text is 'Intro Video'/'Outro Video', URL in the next non-empty cell to its right).
+URL resolution priority per clip:  --intro-url/--outro-url/--trailer-url  >  env
+RACECAST_INTRO_URL/RACECAST_OUTRO_URL/RACECAST_TRAILER_URL  >  Google Sheet 'Assets'
+tab (a cell whose text is 'Intro Video'/'Outro Video'/'Trailer Video', URL in the
+next non-empty cell to its right).
 
 Intermission Music (--music-url / env RACECAST_INTERMISSION_MUSIC_URL / Assets tab
 label 'Intermission Music') is downloaded as intermission.mp3. Accepts a Google
@@ -11,13 +12,13 @@ Drive share link (direct download) or any http(s) URL (yt-dlp audio extraction).
 A missing music URL is a WARNING, not a failure — the neutral ambient-loop
 placeholder is seeded instead.
 
-Clips are written as intro.mp4 / outro.mp4 / intermission.mp3 into the media dir
-(repo: <repo>/runtime/media ; distributed package: <package>/media). Never stored
-under src/, never committed.
+Clips are written as intro.mp4 / outro.mp4 / trailer.mp4 / intermission.mp3 into
+the media dir (repo: <repo>/runtime/media ; distributed package: <package>/media).
+Never stored under src/, never committed.
 
-Usage: python3 get-media.py [--which intro|outro|music|both|all] [--out DIR]
+Usage: python3 get-media.py [--which intro|outro|trailer|music|both|all] [--out DIR]
        [--sheet-id ID] [--assets-tab NAME] [--intro-url U] [--outro-url U]
-       [--music-url U]
+       [--trailer-url U] [--music-url U]
 """
 import argparse, csv, io, os, re, subprocess, sys, time
 from urllib.parse import quote, urlencode, urlparse

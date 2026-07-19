@@ -39,7 +39,7 @@ with **no leading blank rows**. Most tabs locate their columns **by header text*
 | [Timer](#timer-tab) | `Timer` | `--timer-tab` | relay | Race-countdown state (see [Race Timer](Race-Timer)) |
 | [Crew](#crew-tab) | `Crew` | `--crew-tab` | relay | Director / producer / commentator / race-control roster |
 | [Producer](#producer-tab) | `Producer` | — | Control Center | Producer-handover schedule with one-click Funnel takeover |
-| [Assets](#assets-tab) | `Assets` | `--assets-tab` | `racecast graphics` / `media` | Links to the broadcast graphics + intro/outro clips |
+| [Assets](#assets-tab) | `Assets` | `--assets-tab` | `racecast graphics` / `media` | Links to the broadcast graphics + intro/outro/trailer clips |
 | [Brands](#brands-tab) | `Brands` | — | `racecast brands` | Per-league brand-logo overrides for the HUD (optional) |
 | [Event Notes](#event-notes-tab) | `Event Notes` | `--event-notes-tab` | relay | League-owner notes shown as a modal in the console pages (optional) |
 
@@ -288,16 +288,16 @@ Part    | Producer          | MagicDNS
 
 ## Assets tab
 
-Where the broadcast **graphics** and **intro/outro clips** are linked — read by
+Where the broadcast **graphics** and **intro/outro/trailer clips** are linked — read by
 `racecast graphics` and `racecast media`, **not** the relay. Each row: a **label** in
 column A and a link in the first non-empty cell to its right.
 
 - A **Google-Drive** share link is downloaded by `racecast graphics` as
   `runtime/<profile>/graphics/<Label>.png` — **the label is the filename**, so keep it
   filesystem-clean and matching the OBS scene's image name.
-- The rows labelled **`Intro Video`** / **`Outro Video`** hold a **YouTube** URL and are
-  downloaded by `racecast media` into `runtime/<profile>/media/` (the relay skips them
-  for graphics).
+- The rows labelled **`Intro Video`** / **`Outro Video`** / **`Trailer Video`** hold a
+  **YouTube** URL and are downloaded by `racecast media` into `runtime/<profile>/media/`
+  (the relay skips them for graphics).
 - The row labelled **`Intermission Music`** holds a Google-Drive MP3 link **or** a
   YouTube/URL and is downloaded by `racecast media` into
   `runtime/<profile>/media/intermission.mp3`. A synthetic ambient-loop placeholder
@@ -325,6 +325,7 @@ Flag Safety Car      | <Drive link>
 Flag Virtual Safety Car | <Drive link>
 Intro Video          | https://www.youtube.com/watch?v=SAMPLE0INTRO
 Outro Video          | https://www.youtube.com/watch?v=SAMPLE0OUTRO
+Trailer Video        | https://www.youtube.com/watch?v=SAMPLE0TRAILER
 Intermission Music   | <Drive link or YouTube URL>
 ```
 

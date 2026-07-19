@@ -38,6 +38,7 @@ SHEET_ID=your_google_sheet_id_here
 SHEET_PUSH_URL=https://script.google.com/macros/s/…/exec?key=your_secret
 INTRO_URL=
 OUTRO_URL=
+TRAILER_URL=
 LOGO=
 OBS_COLLECTION=
 # optional Discord integration
@@ -62,8 +63,9 @@ DISCORD_WEBHOOK_URL=
   use it to write changes back to the sheet — without it those panel controls are read-only.
   Unset = timer works on this machine only (no sheet sync); panel sheet controls become read-only. See [Sheet-Webhook](Sheet-Webhook)
   for setup.
-- **`INTRO_URL` / `OUTRO_URL`** *(optional)* — override the Intro/Outro clip URLs that
-  normally come from the Sheet **Assets** tab (used by `racecast media`).
+- **`INTRO_URL` / `OUTRO_URL` / `TRAILER_URL`** *(optional)* — override the
+  Intro/Outro/Trailer clip URLs that normally come from the Sheet **Assets** tab
+  (used by `racecast media`).
 - **`LOGO`** *(optional)* — a logo image (relative to the profile dir) for the Control Center.
 - **`OBS_COLLECTION`** *(optional)* — the OBS scene-collection name this league uses, so
   several leagues can keep separate collections in OBS on one machine. `racecast setup`
