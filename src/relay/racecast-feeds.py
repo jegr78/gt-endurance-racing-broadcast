@@ -395,6 +395,35 @@ def _env_float(environ, key, default):
     return v if v > 0 else default
 
 
+FEED_STALL_FLOOR_S = 1.0          # #535: min inbound gap (s) that can count as a stall (prebuffer=0 guard)
+
+
+def feed_stall_floor_s(environ):
+    """Floor for the inbound-stall signal (#535). Pure."""
+    return _env_float(environ, "RACECAST_FEED_STALL_FLOOR_S", FEED_STALL_FLOOR_S)
+
+
+def feed_stall_signal_enabled(environ):
+    """True unless RACECAST_FEED_STALL_SIGNAL is an explicit falsey token (#535). Default ON.
+    When off the gap is still sampled to the DB but never contributes the yellow reason. Pure."""
+    return str(environ.get("RACECAST_FEED_STALL_SIGNAL", "")).strip().lower() not in _FANOUT_FALSEY
+
+
+def feed_inbound_degraded(max_gap_s, prebuffer_s, floor_s):
+    """#535: an interval's max inbound inter-arrival gap is a stutter risk when it exceeds
+    BOTH the #533 reserve (prebuffer_s — a gap the prebuffer absorbed is fine) and the floor
+    (so prebuffer=0 still needs a real gap). Pure."""
+    return max_gap_s > max(prebuffer_s, floor_s)
+
+
+def update_max_gap(prev_max, last_byte_ts, now):
+    """Fold one inter-arrival gap into the running per-interval max (#535). Pure: no prior
+    byte -> unchanged; else max(prev, now-last_byte_ts)."""
+    if last_byte_ts is None:
+        return prev_max
+    return max(prev_max, now - last_byte_ts)
+
+
 def feed_autoresync_skip_rate(environ):
     """OBS render-skip rate (fraction of frames skipped per poll interval) above which the
     relay auto-rebuilds the on-air feed's OBS input (#488). The socket send-block signal was
@@ -5580,6 +5609,7 @@ class Feed:
         self.ring = None              # set by the relay when fan-out is enabled (#358); None → direct-serve
         self.fanout_server = None     # its FeedFanoutServer (fan-out on); the freeze detector reads its snap count (#488)
         self.last_byte_ts = None      # monotonic ts of the last byte pumped into the ring (fan-out health)
+        self._max_inbound_gap = 0.0   # #535: largest inter-arrival gap this heartbeat interval
         self.on_recovery = None       # relay-set callback(feed, stint, downtime_s, source_state) on a drop-recovery
         self.source_state = None      # #495: "not_live_yet"/"ended"/None (why the feed isn't serving)
         self.offline_since = None     # #495: epoch the source first became classified-offline (else None)
@@ -5594,6 +5624,13 @@ class Feed:
         else:
             self.offline_since = None
         self.source_state = st
+
+    def take_max_inbound_gap(self):
+        """Return the largest inter-arrival gap seen since the last call, and reset (#535).
+        Called once per heartbeat so a transient stall between 30 s ticks is still captured."""
+        g = self._max_inbound_gap
+        self._max_inbound_gap = 0.0
+        return g
 
     def current_channel(self):
         if self.paused:
@@ -5770,8 +5807,10 @@ class Feed:
                 if not chunk:
                     break                    # EOF (ended / 403 / expired) or watchdog kill
                 first = self.last_byte_ts is None
+                _now = time.monotonic()
+                self._max_inbound_gap = update_max_gap(self._max_inbound_gap, self.last_byte_ts, _now)
                 self.ring.write(chunk)
-                self.last_byte_ts = time.monotonic()
+                self.last_byte_ts = _now
                 if first and on_first_byte is not None:
                     on_first_byte()          # e.g. force OBS to reconnect on a drop-recovery
         finally:
