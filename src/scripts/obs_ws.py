@@ -514,6 +514,37 @@ class _PassthroughConn:
         pass
 
 
+_SHOT_FNS = frozenset({"get_program_screenshot", "get_source_screenshot"})
+_ROUTED_FNS = _SHOT_FNS | frozenset({
+    "read_obs_state", "get_health_stats", "get_current_program_scene",
+    "set_current_program_scene", "switch_to_scene_if_idle", "set_scene_item_enabled",
+    "set_scene_item_transform", "set_input_volume", "set_input_mute", "set_stream",
+    "set_stream_service", "reflect_feed_state", "refresh_browser_inputs",
+    "release_feed_inputs", "feed_media_cursors", "get_scene_collection",
+    "set_scene_collection",
+})
+
+
+class _ObsFacade:
+    """Routes the relay's obs_ws.* calls through two persistent holders (#537):
+    screenshots on one connection, control/read on the other. Non-routed attributes
+    (constants, pure helpers) pass straight through to the module."""
+
+    def __init__(self, shot, ctrl, module):
+        self._shot, self._ctrl, self._m = shot, ctrl, module
+
+    def __getattr__(self, name):
+        if name in _ROUTED_FNS:
+            conn = self._shot if name in _SHOT_FNS else self._ctrl
+            fn = getattr(self._m, name)
+            return lambda *a, **k: conn.run(fn, *a, **k)
+        return getattr(self._m, name)
+
+    def close(self):
+        self._shot.close()
+        self._ctrl.close()
+
+
 def _pct(part, total):
     """skipped/total as a rounded percentage, or None when either is missing or
     total is zero (avoid a div-by-zero and a meaningless 0/0)."""
@@ -670,12 +701,14 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
 
 
 def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
-                       password=None, timeout=2.0):
+                       password=None, timeout=2.0, session=None):
     """({feed_port: mediaCursor_ms or None}, note) for the relay feed media inputs OBS holds.
     The #488 freeze detector uses whether the on-air feed's cursor ADVANCES to tell a live
     demuxer from a stale/frozen one — a signal renderSkippedFrames is blind to. Best-effort:
     OBS unreachable / protocol surprise -> ({}, reason), never an exception."""
-    session, note = _connect(host, port, password, timeout)
+    own = session is None
+    if own:
+        session, note = _connect(host, port, password, timeout)
     if session is None:
         return {}, note
     try:
@@ -712,7 +745,8 @@ def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
     except Exception as exc:                         # noqa: BLE001 — best-effort contract
         return {}, str(exc) or exc.__class__.__name__
     finally:
-        session.close()
+        if own:
+            session.close()
 
 
 def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,

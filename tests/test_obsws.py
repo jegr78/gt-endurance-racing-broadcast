@@ -1714,6 +1714,49 @@ def t_passthrough_calls_without_session():
     c.close()                              # no-op, must not raise
 
 
+class _RecordConn:
+    def __init__(self, tag): self.tag, self.calls = tag, []
+    def run(self, func, *a, **k):
+        self.calls.append((getattr(func, "__name__", func), a, k)); return self.tag
+    def close(self): self.calls.append(("closed", (), {}))
+
+
+def t_facade_routes_screenshot_vs_control():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = m._ObsFacade(shot, ctrl, m)
+    assert fac.get_program_screenshot(width=640) == "shot"
+    assert fac.set_input_mute("Feed A", True) == "ctrl"
+    assert shot.calls[0][0] == "get_program_screenshot"
+    assert ctrl.calls[0][0] == "set_input_mute"
+
+
+def t_facade_passes_through_non_routed_attrs():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    fac = m._ObsFacade(shot, ctrl, m)
+    assert fac.STINT_SCENE is m.STINT_SCENE              # constant pass-through
+    assert fac.stream_kbps is m.stream_kbps             # pure helper pass-through (not routed)
+    assert not shot.calls and not ctrl.calls
+
+
+def t_facade_close_closes_both():
+    shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
+    m._ObsFacade(shot, ctrl, m).close()
+    assert shot.calls[-1][0] == "closed" and ctrl.calls[-1][0] == "closed"
+
+
+def t_feed_media_cursors_accepts_session():
+    # #537: feed_media_cursors is in _ROUTED_FNS, so it must accept a passed session
+    # (skip _connect/close) — regression guard for the Task 2 gap.
+    fs = _ConnFakeSession({"GetInputList": {"inputs": []}})
+    orig = m._connect
+    m._connect = lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not connect"))
+    try:
+        out, note = m.feed_media_cursors(session=fs)
+    finally:
+        m._connect = orig
+    assert out == {} and note == "" and fs.closed is False
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
