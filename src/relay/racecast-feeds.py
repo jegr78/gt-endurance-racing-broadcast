@@ -93,7 +93,7 @@ _OBS_WS_MODULE = _obs_ws
 class _RelayObsFacade:
     """Routes Relay/handler obs_ws.* calls (#537) through two persistent connection
     holders — but ONLY when the module-level `_obs_ws` name currently refers to the
-    real obs_ws module (recognisable by its `_ROUTED_FNS` registry). Every lookup is
+    real obs_ws module (recognisable by its `route_kind` helper). Every lookup is
     late-bound to `_obs_ws` at CALL time (not frozen at Relay construction), so a
     test that monkeypatches `_obs_ws` to a lightweight fake — before or after a Relay
     already exists — still gets a direct, unwrapped call to that fake, exactly like
@@ -109,10 +109,12 @@ class _RelayObsFacade:
         if target is None:
             raise AttributeError(name)
         fn = getattr(target, name)
-        routed = getattr(target, "_ROUTED_FNS", None)
-        if routed is not None and name in routed:
-            shot_fns = getattr(target, "_SHOT_FNS", frozenset())
-            conn = self._shot if name in shot_fns else self._ctrl
+        # Route only when the current target is the real module (it exposes route_kind);
+        # a test's fake obs_ws has none -> the call goes straight through (no session=).
+        route_kind = getattr(target, "route_kind", None)
+        kind = route_kind(name) if route_kind is not None else None
+        if kind is not None:
+            conn = self._shot if kind == "shot" else self._ctrl
             return lambda *a, **k: conn.run(fn, *a, **k)
         return fn                           # constants / pure helpers / an unrouted fake
 
