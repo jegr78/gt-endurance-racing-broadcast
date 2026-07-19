@@ -492,3 +492,124 @@ git commit -m "chore(relay): lint/test fixups for trailing prebuffer (#533)"
 **Type consistency:** `trailing_offset(prebuffer_s, now)`, `offset_at_age(age_s, now)`, `fanout_join_offset(ring, prebuffer_s, now)`, `FeedFanoutServer(..., prebuffer_s=0.0)`, `_join_offset(now)` (server) vs `_join_offset(ring, now)` (program-audio — different receiver, intentionally different arity), `Relay.feed_prebuffer_s`, `feed_prebuffer_s(environ, default=...)` — consistent across tasks.
 
 **Note on the two `_join_offset` methods:** `FeedFanoutServer._join_offset(now)` reads its own `self.prebuffer_s`; `ProgramAudioService._join_offset(ring, now)` reads `self.relay.feed_prebuffer_s` and takes the ring explicitly (the on-air feed ring changes across handovers). Both delegate to the single pure `fanout_join_offset`.
+
+---
+
+### Task 6: Continuous trailing cap (the validated fix)
+
+**Context:** The local ffmpeg validation (`tools/fanout-backpressure-check.py`) disproved the static trailing-*start* approach — a real 1× consumer gulps the backlog on join and the reserve drains to ~0.1 s. The fix (validated at ~3.16 s steady, `--mode cap`) is to **cap every read** at the wall-clock-advancing trailing high-water mark, so a greedy consumer cannot outrun it and the reserve is released during a source stall. Tasks 1–4 stay; this adds the cap.
+
+**Files:**
+- Modify: `src/relay/racecast-feeds.py` — `FeedRing.read` (+ optional `high`); new module-level `fanout_capped_read`; `FeedFanoutServer._serve` read line; `ProgramAudioService._feed_stdin` read line
+- Modify: `CLAUDE.md` (mechanism sentence)
+- Test: `tests/test_fanout.py`
+
+**Interfaces:**
+- Produces: `FeedRing.read(self, cursor, timeout, high=None)` (cap at `min(high, live)`; `high=None` = today's read-to-live); `fanout_capped_read(ring, cursor, prebuffer_s, now=None, timeout_capped=0.2, timeout_live=1.0) -> (data, cursor)`.
+
+- [ ] **Step 1: Write the failing tests** (append to `tests/test_fanout.py`)
+
+```python
+def t_ring_read_high_caps_at_offset():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1, high=400)
+    assert cur == 400 and len(data) == 400
+
+
+def t_ring_read_high_none_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(0, 0.1)                 # high omitted -> live edge (unchanged)
+    assert cur == 1000 and len(data) == 1000
+
+
+def t_ring_read_at_cap_returns_empty():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 1000, now=0.0)
+    data, cur = r.read(400, 0.05, high=400)    # cursor already at the cap
+    assert data == b"" and cur == 400
+
+
+def t_fanout_capped_read_holds_below_trailing():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))      # live=1000; trailing(3,9)=700
+    data, cur = m.fanout_capped_read(r, 0, 3.0, now=9.0)
+    assert cur == 700 and len(data) == 700     # capped at the trailing high-water
+
+
+def t_fanout_capped_read_zero_prebuffer_reads_to_live():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+    data, cur = m.fanout_capped_read(r, 0, 0.0, now=5.0)
+    assert cur == 500 and len(data) == 500
+```
+
+- [ ] **Step 2: Run — confirm RED**
+
+Run: `python3 tests/test_fanout.py`
+Expected: FAIL — `TypeError: read() got an unexpected keyword argument 'high'` (or `fanout_capped_read` missing).
+
+- [ ] **Step 3: Implement**
+
+(a) Replace `FeedRing.read` with the capped version:
+```python
+    def read(self, cursor, timeout, high=None):
+        with self._cond:
+            live = self._base + len(self._buf)
+            limit = live if high is None else min(high, live)
+            if cursor >= limit and not self.closed:
+                self._cond.wait(timeout)
+                live = self._base + len(self._buf)
+                limit = live if high is None else min(high, live)
+            if cursor < self._base:        # fell behind -> snap to oldest retained byte
+                cursor = self._base
+            if cursor >= limit:
+                return b"", cursor
+            data = bytes(self._buf[cursor - self._base: limit - self._base])
+            return data, limit
+```
+
+(b) Add `fanout_capped_read` next to `fanout_join_offset` (just above `class FeedFanoutServer`):
+```python
+def fanout_capped_read(ring, cursor, prebuffer_s, now=None,
+                       timeout_capped=0.2, timeout_live=1.0):
+    """One read for a trailing broadcast consumer (#533): when prebuffer_s > 0 and
+    the ring has a time index, cap the read at the trailing high-water mark
+    trailing_offset(prebuffer_s, now) -- it advances at wall-clock 1x, so a greedy
+    consumer cannot outrun it and the held-back reserve is released during a source
+    stall. Otherwise read to the live edge. Returns (data, new_cursor). now is
+    injected for tests."""
+    if prebuffer_s > 0 and hasattr(ring, "trailing_offset"):
+        if now is None:
+            now = time.monotonic()
+        high = ring.trailing_offset(prebuffer_s, now)
+        return ring.read(cursor, timeout_capped, high=high)
+    return ring.read(cursor, timeout_live)
+```
+
+(c) In `FeedFanoutServer._serve`, replace `data, cursor = self.ring.read(cursor, timeout=1.0)` with:
+```python
+                data, cursor = fanout_capped_read(self.ring, cursor, self.prebuffer_s)
+```
+
+(d) In `ProgramAudioService._feed_stdin`, replace `data, cursor = ring.read(cursor, 1.0)` with:
+```python
+                data, cursor = fanout_capped_read(
+                    ring, cursor, getattr(self.relay, "feed_prebuffer_s", 0.0))
+```
+
+(e) In `CLAUDE.md`, adjust the #533 sentence to describe the cap: OBS and the program-audio monitor are **served only up to a trailing high-water mark `RACECAST_FEED_PREBUFFER_S` seconds behind the live edge** (default 3 s), holding an in-ring reserve that absorbs bursty-source gaps; `=0` restores the live-edge serve; the Director-Panel preview still taps the live edge.
+
+- [ ] **Step 4: Run — confirm GREEN**
+
+Run: `python3 tests/test_fanout.py` then `python3 tests/test_program_audio.py`
+Expected: both PASS. (The `read` default `high=None` keeps every existing consumer and test unchanged.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/relay/racecast-feeds.py CLAUDE.md tests/test_fanout.py
+git commit -m "feat(relay): continuous trailing high-water cap holds the reserve (#533)"
+```
