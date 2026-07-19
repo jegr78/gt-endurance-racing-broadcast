@@ -36,7 +36,6 @@ import http.server
 import os
 import socketserver
 import subprocess
-import sys
 import threading
 import urllib.parse
 
@@ -177,4 +176,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
