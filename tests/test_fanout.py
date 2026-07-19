@@ -490,6 +490,26 @@ def t_fanout_capped_read_zero_prebuffer_reads_to_live():
     assert cur == 500 and len(data) == 500
 
 
+def t_feed_prebuffer_s_rejects_non_finite():
+    for v in ("inf", "-inf", "nan", "Infinity", "NaN"):
+        assert m.feed_prebuffer_s({"RACECAST_FEED_PREBUFFER_S": v}) == 3.0, v
+
+
+def t_fanout_capped_read_falls_back_without_time_index():
+    # prebuffer_s > 0 but the ring has no trailing_offset (direct-serve / a test
+    # double): fanout_capped_read must take the live-edge branch (no cap applied).
+    calls = {}
+
+    class _NoIndexRing:
+        def read(self, cursor, timeout, high=None):
+            calls["high"] = high
+            return b"tail", 500
+
+    data, cur = m.fanout_capped_read(_NoIndexRing(), 0, 3.0, now=9.0)
+    assert (data, cur) == (b"tail", 500)
+    assert calls["high"] is None            # live-edge branch: no cap passed to read
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

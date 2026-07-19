@@ -370,16 +370,19 @@ def feed_robust_auto_enabled(environ):
 
 def feed_prebuffer_s(environ, default=DEFAULT_FEED_PREBUFFER_S):
     """Seconds OBS and the program-audio monitor join behind the fan-out live edge
-    (#533). Absent/empty/non-numeric -> default; a valid number (incl. 0) is used
-    as-is; negatives clamp to 0.0 (disabled = today's live-edge join). Pure so the
-    knob is unit-testable."""
+    (#533). Absent/empty/non-numeric/non-finite -> default; a valid finite number
+    (incl. 0) is used as-is; negatives clamp to 0.0 (disabled = today's live-edge
+    join). Pure so the knob is unit-testable."""
     raw = str(environ.get("RACECAST_FEED_PREBUFFER_S", "")).strip()
     if raw == "":
         return default
     try:
-        return max(0.0, float(raw))
+        v = float(raw)
     except ValueError:
         return default
+    if v != v or v == float("inf") or v == float("-inf"):
+        return default                       # reject nan/inf -> default (no import needed)
+    return max(0.0, v)
 
 
 def _env_float(environ, key, default):
