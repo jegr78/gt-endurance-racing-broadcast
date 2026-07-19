@@ -35,9 +35,10 @@ collection.
   CURRENT); these are relay-driven (`/splitscreen`).
 - **Interview** — interview graphic + Discord audio.
 - **Standby / BRB** — for breaks.
-- **Intro** / **Outro** — full-screen stream-open and stream-close clips that **loop with
-  audio**, played from local files (`runtime/media/intro.mp4` / `outro.mp4`). The director
-  switches to them with the Companion **INTRO** / **OUTRO** buttons. The file paths are
+- **Intro** / **Outro** / **Trailer** — full-screen stream-open, stream-close, and
+  standalone-trailer clips that **loop with audio**, played from local files
+  (`runtime/media/intro.mp4` / `outro.mp4` / `trailer.mp4`). The director switches to
+  them with the Companion **INTRO** / **OUTRO** / **TRAILER** buttons. The file paths are
   tokenised as `__RACECAST_MEDIA__` in the collection and resolved by `setup-assets.py`; download
   or refresh the clips from the Sheet **Assets** tab with `racecast media`
   (see [Configuration](Configuration)). If the clips are missing the scene shows black.

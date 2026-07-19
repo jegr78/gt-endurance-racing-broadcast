@@ -126,6 +126,7 @@ def t_setup_assets_fills_placeholders_for_missing():
                 {"settings": {"file": "__RACECAST_GRAPHICS__/Weather Sunny.png"}},
                 {"settings": {"local_file": "__RACECAST_MEDIA__/intro.mp4"}},
                 {"settings": {"local_file": "__RACECAST_MEDIA__/outro.mp4"}},
+                {"settings": {"local_file": "__RACECAST_MEDIA__/trailer.mp4"}},
                 {"settings": {"local_file": "__RACECAST_MEDIA__/intermission.mp3"}},
             ]}, fh)
         gfx, med = os.path.join(tmp, "gfx"), os.path.join(tmp, "med")
@@ -139,6 +140,7 @@ def t_setup_assets_fills_placeholders_for_missing():
         assert os.path.isfile(os.path.join(gfx, "Weather Sunny.png")), r.stdout
         assert os.path.isfile(os.path.join(med, "intro.mp4")), r.stdout
         assert os.path.isfile(os.path.join(med, "outro.mp4")), r.stdout
+        assert os.path.isfile(os.path.join(med, "trailer.mp4")), r.stdout
         assert os.path.isfile(os.path.join(med, "intermission.mp3")), r.stdout
         assert "placeholder" in r.stdout.lower(), r.stdout
 
@@ -174,8 +176,8 @@ def t_get_graphics_obs_template_dir_is_sibling():
 def t_get_media_seeds_placeholder_clip():
     gm = _load_script("relay/get-media.py")
     with tempfile.TemporaryDirectory() as tmp:
-        seeded = gm.seed_missing_media(tmp, {"intro", "outro"})
-        assert sorted(seeded) == ["intro.mp4", "outro.mp4"]
+        seeded = gm.seed_missing_media(tmp, {"intro", "outro", "trailer"})
+        assert sorted(seeded) == ["intro.mp4", "outro.mp4", "trailer.mp4"]
         with open(MP4, "rb") as a, open(os.path.join(tmp, "intro.mp4"), "rb") as b:
             assert a.read() == b.read()
         # already-present clip is not overwritten / re-listed

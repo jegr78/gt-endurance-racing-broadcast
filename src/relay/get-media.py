@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Download the stream Intro/Outro clips and Intermission Music for OBS.
+"""Download the stream Intro/Outro/Trailer clips and Intermission Music for OBS.
 
-URL resolution priority per clip:  --intro-url/--outro-url  >  env
-RACECAST_INTRO_URL/RACECAST_OUTRO_URL  >  Google Sheet 'Assets' tab (a cell whose
-text is 'Intro Video'/'Outro Video', URL in the next non-empty cell to its right).
+URL resolution priority per clip:  --intro-url/--outro-url/--trailer-url  >  env
+RACECAST_INTRO_URL/RACECAST_OUTRO_URL/RACECAST_TRAILER_URL  >  Google Sheet 'Assets'
+tab (a cell whose text is 'Intro Video'/'Outro Video'/'Trailer Video', URL in the
+next non-empty cell to its right).
 
 Intermission Music (--music-url / env RACECAST_INTERMISSION_MUSIC_URL / Assets tab
 label 'Intermission Music') is downloaded as intermission.mp3. Accepts a Google
@@ -11,13 +12,13 @@ Drive share link (direct download) or any http(s) URL (yt-dlp audio extraction).
 A missing music URL is a WARNING, not a failure — the neutral ambient-loop
 placeholder is seeded instead.
 
-Clips are written as intro.mp4 / outro.mp4 / intermission.mp3 into the media dir
-(repo: <repo>/runtime/media ; distributed package: <package>/media). Never stored
-under src/, never committed.
+Clips are written as intro.mp4 / outro.mp4 / trailer.mp4 / intermission.mp3 into
+the media dir (repo: <repo>/runtime/media ; distributed package: <package>/media).
+Never stored under src/, never committed.
 
-Usage: python3 get-media.py [--which intro|outro|music|both|all] [--out DIR]
+Usage: python3 get-media.py [--which intro|outro|trailer|music|both|all] [--out DIR]
        [--sheet-id ID] [--assets-tab NAME] [--intro-url U] [--outro-url U]
-       [--music-url U]
+       [--trailer-url U] [--music-url U]
 """
 import argparse, csv, io, os, re, subprocess, sys, time
 from urllib.parse import quote, urlencode, urlparse
@@ -47,7 +48,8 @@ DOWNLOAD_ATTEMPTS = 3                 # total yt-dlp invocations before giving u
 RETRY_BACKOFF_SECONDS = (3, 8)        # sleep before retry 2, retry 3, then last value
 
 # Sheet label cell -> output key.
-MEDIA_LABELS = {"intro video": "intro", "outro video": "outro"}
+MEDIA_LABELS = {"intro video": "intro", "outro video": "outro",
+                "trailer video": "trailer"}
 
 # Music asset constants.
 MUSIC_LABEL = "intermission music"   # Assets-tab label
@@ -352,18 +354,20 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(here)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["intro", "outro", "music", "both", "all"],
+    ap.add_argument("--which",
+                    choices=["intro", "outro", "trailer", "music", "both", "all"],
                     default="all",
-                    help="Which assets to fetch: intro, outro, music, both (=intro+outro), "
-                         "all (=intro+outro+music, default).")
+                    help="Which assets to fetch: intro, outro, trailer, music, "
+                         "both (=intro+outro), all (=intro+outro+trailer+music, default).")
     ap.add_argument("--out", default=media_dir(here),
-                    help="Target dir for intro.mp4 / outro.mp4 / intermission.mp3 "
-                         "(default: media_dir).")
+                    help="Target dir for intro.mp4 / outro.mp4 / trailer.mp4 / "
+                         "intermission.mp3 (default: media_dir).")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID holding the Assets tab. Default: env RACECAST_SHEET_ID.")
     ap.add_argument("--assets-tab", default="Assets")
     ap.add_argument("--intro-url", default=None)
     ap.add_argument("--outro-url", default=None)
+    ap.add_argument("--trailer-url", default=None)
     ap.add_argument("--music-url", default=None,
                     help="Intermission Music URL (Drive link or yt-dlp-compatible). "
                          "Default: env RACECAST_INTERMISSION_MUSIC_URL or Assets tab.")
@@ -374,7 +378,9 @@ def main():
     a = ap.parse_args()
 
     # Determine video clip set and music flag.
-    if a.which in ("both", "all"):
+    if a.which == "all":
+        which = {"intro", "outro", "trailer"}
+    elif a.which == "both":
         which = {"intro", "outro"}
     elif a.which == "music":
         which = set()
@@ -382,7 +388,7 @@ def main():
         which = {a.which}
     want_music = a.which in ("all", "music")
 
-    cli = {"intro": a.intro_url, "outro": a.outro_url}
+    cli = {"intro": a.intro_url, "outro": a.outro_url, "trailer": a.trailer_url}
 
     # Only hit the sheet if a CLI/env URL is missing for something we need.
     csv_text = None

@@ -213,6 +213,7 @@ def _profile_env_vars(rc):
              ("RACECAST_SHEET_PUSH_URL", rc.sheet_push_url),
              ("RACECAST_INTRO_URL", rc.intro_url),
              ("RACECAST_OUTRO_URL", rc.outro_url),
+             ("RACECAST_TRAILER_URL", rc.trailer_url),
              ("RACECAST_DISCORD_WEBHOOK_URL", rc.discord_webhook_url),
              ("RACECAST_OBS_COLLECTION", rc.obs_collection),
              ("RACECAST_CONSOLE_SECRET", rc.console_secret),
