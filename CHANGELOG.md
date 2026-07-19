@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.8.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.7.1...v1.8.0) (2026-07-19)
+
+
+### Features
+
+* **companion:** reorganise button board — 3 topic pages, colour-coded, fixed labels ([#549](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/549)) ([70594a0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/70594a086d380a04a36c97a39f7775c5e1e58a0a))
+* inbound feed-stall signal — quiet-yellow health for source jitter ([#535](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/535)) ([#543](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/543)) ([b328ec0](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/b328ec03331bafb0ef538e95f3f1c4a63f09fea2))
+* persistent obs-websocket connections — kill the connect-per-poll churn ([#537](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/537)) ([#544](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/544)) ([4a0824a](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/4a0824a92edd4f7379e344139508a98db55afce3))
+* **relay:** trailing-cursor prebuffer to eliminate source-jitter stutters ([#533](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/533)) ([#539](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/539)) ([4838245](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/483824512ef73677d0bdbe430a566c31d16835be))
+* **report:** show host CPU/RAM/network in the post-event report ([#536](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/536)) ([#542](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/542)) ([bb89b7b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/bb89b7bf5f3bf3622b66d7b1789c3c8e49ee378d))
+* Trailer broadcast video (Assets-managed, OBS scene, Panel + Web Buttons) ([#547](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/547)) ([c75875f](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c75875f54fdbac64e49662817aebd0df4aa99b63))
+
+
+### Bug Fixes
+
+* **console:** accept Companion v5 backtick version marker for Web Buttons ([#546](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/546)) ([c3d30c5](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c3d30c508a8148a3fef7c42b3608960ad963a2b4))
+* **discord:** surface the real Discord auth error (invalid_scope) instead of a misleading 400 ([#531](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/531)) ([c70261e](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/c70261e7de18f7373c1406e182399fc3aaf9e61c))
+* **obs-ws:** clear CodeQL alerts from the persistent-connection change ([#537](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/537)) ([#545](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/545)) ([862cbd2](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/862cbd2f7628efd391d1e637ef3a0a3c55045d2a))
+* **panel:** resolve SPLIT audio from the on-air feed (server-side) ([#534](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/534)) ([#541](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/541)) ([72aab1b](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/72aab1be0434c0729c31bc330c1d1bed485304b1))
+* **relay:** use math.isfinite for the prebuffer NaN/inf guard (clears CodeQL) ([#533](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/533)) ([#540](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/540)) ([2b796cf](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/2b796cf51d2a96360514e58c8e0a390da2a4e33d))
+
 ## [1.7.1](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.7.0...v1.7.1) (2026-07-17)
 
 
