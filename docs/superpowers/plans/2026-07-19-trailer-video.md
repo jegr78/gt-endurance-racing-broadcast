@@ -778,6 +778,7 @@ git commit -m "feat(companion): TRAILER button on PAGE 1 (0/7); move RED FLAG to
 - Modify: `src/docs/sheet-template/Assets.csv` (after the `Outro Video` row, line 27)
 - Modify: `src/docs/wiki/Sheet-Template.md` (Assets sample, ~line 327), `src/docs/wiki/OBS-Setup.md` (~lines 38–40), `src/docs/wiki/Director.md`, `src/docs/wiki/Configuration.md` (~lines 39–40, 65), `src/docs/wiki/Profiles.md` (~lines 27–28, 42)
 - Modify: `CLAUDE.md` (Intro/Outro mentions)
+- Modify: `src/relay/get-media.py` (module docstring + `Usage:` line — add trailer/`--trailer-url`, carried over from Task 1's deferred Minor)
 - Test: `tests/test_wiki.py` (link/anchor validation — run after wiki edits)
 
 **Interfaces:** none (docs + a sample CSV row). The `SAMPLE0TRAILER` value is a placeholder, never fetched.
@@ -806,16 +807,18 @@ Trailer Video        | https://www.youtube.com/watch?v=SAMPLE0TRAILER
 
 - [ ] **Step 6: Update CLAUDE.md** — extend the Intro/Outro mentions to include the Trailer: the `racecast media` line (~185), the `INTRO_URL`/`OUTRO_URL` profile-keys line (~247), the `RACECAST_INTRO_URL`/`RACECAST_OUTRO_URL` line (~260–261), and the `__RACECAST_MEDIA__` / get-media → OBS scenes description (~304, ~329–331). Add "Trailer" alongside Intro/Outro in each — mechanism only, no procedure.
 
-- [ ] **Step 7: Validate wiki links/anchors**
+- [ ] **Step 7: Update the get-media.py in-file docstring** — `src/relay/get-media.py`, the module docstring + `Usage:` line (~lines 2–19): extend the intro/outro/music description to mention `trailer`/`--trailer-url`, mirroring the existing wording (Task 1 deferred this — it left the line-specific edits to the brief). Do not change any code, only the docstring text.
 
-Run: `python3 tests/test_wiki.py`
-Expected: `ALL PASS` (per CLAUDE.md memory: always run after wiki edits).
+- [ ] **Step 8: Validate wiki links/anchors + lint**
 
-- [ ] **Step 8: Commit**
+Run: `python3 tests/test_wiki.py && python3 tools/lint.py`
+Expected: `ALL PASS` + lint clean (per CLAUDE.md memory: always run test_wiki after wiki edits).
+
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/docs/ CLAUDE.md
-git commit -m "docs: Trailer video (Assets sample row, wiki, CLAUDE.md)"
+git add src/docs/ CLAUDE.md src/relay/get-media.py
+git commit -m "docs: Trailer video (Assets sample row, wiki, CLAUDE.md, get-media docstring)"
 ```
 
 ---
