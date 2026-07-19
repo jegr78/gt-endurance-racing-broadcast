@@ -368,6 +368,20 @@ def feed_robust_auto_enabled(environ):
     return (environ.get("RACECAST_FEED_ROBUST_AUTO") or "").strip().lower() not in _FANOUT_FALSEY
 
 
+def feed_prebuffer_s(environ, default=DEFAULT_FEED_PREBUFFER_S):
+    """Seconds OBS and the program-audio monitor join behind the fan-out live edge
+    (#533). Absent/empty/non-numeric -> default; a valid number (incl. 0) is used
+    as-is; negatives clamp to 0.0 (disabled = today's live-edge join). Pure so the
+    knob is unit-testable."""
+    raw = str(environ.get("RACECAST_FEED_PREBUFFER_S", "")).strip()
+    if raw == "":
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return default
+
+
 def _env_float(environ, key, default):
     """Parse a positive float env override; fall back to `default` on absent/empty/
     non-numeric/<=0. Pure."""
