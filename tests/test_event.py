@@ -118,9 +118,13 @@ def t_required_media_from_assets_rows():
     gm = _load_relay("get-media.py")
     rows = [["Intro Video", "https://youtu.be/xyz"]]
     assert m.required_media(gm, rows) == ["intro.mp4"]
-    # No media rows in the sheet -> require both (the OBS scenes reference both).
-    assert m.required_media(gm, [["Overlay", "u"]]) == ["intro.mp4", "outro.mp4"]
-    assert m.required_media(gm, None) == ["intro.mp4", "outro.mp4"]
+    # No media rows in the sheet -> require all three (the OBS scenes reference them).
+    assert m.required_media(gm, [["Overlay", "u"]]) == \
+        ["intro.mp4", "outro.mp4", "trailer.mp4"]
+    assert m.required_media(gm, None) == ["intro.mp4", "outro.mp4", "trailer.mp4"]
+    # A Sheet Trailer row flows through media_urls_from_csv -> included.
+    rows3 = [["Trailer Video", "https://youtu.be/ttt"]]
+    assert m.required_media(gm, rows3) == ["trailer.mp4"]
 
 
 def t_fetch_assets_rows_handles_failure():

@@ -217,12 +217,12 @@ def required_graphics(gg, rows):
 
 
 def required_media(gm, rows):
-    """intro.mp4/outro.mp4 for each media row found in the Assets tab; both
-    when the sheet defines none or is unreadable (the OBS Intro/Outro scenes
-    reference both)."""
+    """intro.mp4/outro.mp4/trailer.mp4 for each media row found in the Assets tab;
+    all three when the sheet defines none or is unreadable (the OBS Intro/Outro/
+    Trailer scenes reference them)."""
     if rows is None:
-        return ["intro.mp4", "outro.mp4"]
-    keys = sorted(gm.media_urls_from_csv(rows)) or ["intro", "outro"]
+        return ["intro.mp4", "outro.mp4", "trailer.mp4"]
+    keys = sorted(gm.media_urls_from_csv(rows)) or ["intro", "outro", "trailer"]
     return [f"{k}.mp4" for k in keys]
 
 
