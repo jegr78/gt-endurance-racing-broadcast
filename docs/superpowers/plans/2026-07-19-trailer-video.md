@@ -532,6 +532,61 @@ def t_panel_has_trailer_macro():
         assert name in macro, f"TRAILER macro must mute {name}"
 
 
+# NOTE: the Companion button assertions (t_companion_has_trailer_button,
+# t_companion_red_flag_still_present) are added to THIS file in Task 6, so every
+# commit stays green — do not add them here in Task 5.
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("t_") and callable(fn):
+            fn(); print("ok", name)
+    print("ALL PASS")
+```
+
+- [ ] **Step 2: Run it to verify the panel check fails**
+
+Run: `python3 tests/test_trailer.py`
+Expected: `t_obs_collection_has_trailer_scene_and_source` PASSES (Task 4 done), `t_panel_has_trailer_macro` FAILS (`substring not found`).
+
+- [ ] **Step 3: Add the TRAILER macro** — `src/director/director-panel.html`, after the OUTRO macro (line 884):
+
+```javascript
+    {label:"OUTRO", scene:"Outro", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+    {label:"TRAILER", scene:"Trailer", show:[], hide:[],
+     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
+```
+
+- [ ] **Step 4: Run the whole test file to verify it passes**
+
+Run: `python3 tests/test_trailer.py`
+Expected: `ALL PASS` (OBS scene check + panel macro check — the Companion checks are added in Task 6).
+
+- [ ] **Step 5: Commit the panel macro + test**
+
+```bash
+git add src/director/director-panel.html tests/test_trailer.py
+git commit -m "feat(panel): TRAILER PGM macro next to INTRO/OUTRO"
+```
+
+---
+
+### Task 6: Companion `TRAILER` button (slot 0/7), move `RED FLAG` to 4/3
+
+> **This task uses the `companion-buttons` skill** (see CLAUDE.md: it authors the button JSON, exports, imports into a running Companion via Playwright with "Import Preserving Unselected", and click-tests — keeping a minimal 1-space-indent diff). Invoke that skill to perform the import/validation; the exact JSON below is the button to author. The file is 1-space indented — preserve that.
+
+**Files:**
+- Modify: `src/companion/racecast-buttons.companionconfig` (PAGE 1 `controls`: move `"0"/"7"` → `"4"/"3"`; add new `"0"/"7"`)
+- Test: `tests/test_trailer.py` (already written in Task 5 — `t_companion_has_trailer_button`, `t_companion_red_flag_still_present`)
+
+**Interfaces:**
+- Consumes: the native OBS-WebSocket Companion connection (`connectionId: "dv_e1zuVb_6XgPv0eRibl"`, `definitionId: "set_scene"` / `set_source_mute` / `sceneProgram`) used by INTRO/OUTRO.
+- Produces: a PAGE 1 button at `0/7` labelled `TRAILER` that switches to scene `Trailer` and mutes Discord/Feed A/Feed B (mirror of INTRO); `RED FLAG` relocated to `4/3`, unchanged otherwise.
+
+- [ ] **Step 0: Add the failing Companion test functions** — append to `tests/test_trailer.py` (before the `if __name__` block; they replace the Task-5 NOTE comment):
+
+```python
 def t_companion_has_trailer_button():
     cfg = json.loads(_read(os.path.join("src", "companion", "racecast-buttons.companionconfig")))
 
@@ -558,55 +613,11 @@ def t_companion_has_trailer_button():
 def t_companion_red_flag_still_present():
     # RED FLAG moved slots but must still exist (it also lives on PAGE 3).
     raw = _read(os.path.join("src", "companion", "racecast-buttons.companionconfig"))
-    assert "RED\\nFLAG" in raw or "RED\nFLAG" in raw, "RED FLAG button disappeared"
-
-
-if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("t_") and callable(fn):
-            fn(); print("ok", name)
-    print("ALL PASS")
+    assert "RED\\nFLAG" in raw, "RED FLAG button disappeared"
 ```
-
-- [ ] **Step 2: Run it to verify the panel + companion checks fail**
 
 Run: `python3 tests/test_trailer.py`
-Expected: `t_obs_collection_has_trailer_scene_and_source` PASSES (Task 4 done), `t_panel_has_trailer_macro` FAILS (`substring not found`).
-
-- [ ] **Step 3: Add the TRAILER macro** — `src/director/director-panel.html`, after the OUTRO macro (line 884):
-
-```javascript
-    {label:"OUTRO", scene:"Outro", show:[], hide:[],
-     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
-    {label:"TRAILER", scene:"Trailer", show:[], hide:[],
-     unmute:[], mute:["Feed A","Feed B","Discord Audio Capture"]},
-```
-
-- [ ] **Step 4: Run the panel check to verify it passes** (Companion checks still fail until Task 6)
-
-Run: `python3 tests/test_trailer.py`
-Expected: `t_panel_has_trailer_macro` now PASSES; `t_companion_has_trailer_button` FAILS (button not added yet). That is expected — Task 6 completes it.
-
-- [ ] **Step 5: Commit the panel macro + test** (do not run `run-tests.py` yet — Companion follows)
-
-```bash
-git add src/director/director-panel.html tests/test_trailer.py
-git commit -m "feat(panel): TRAILER PGM macro next to INTRO/OUTRO"
-```
-
----
-
-### Task 6: Companion `TRAILER` button (slot 0/7), move `RED FLAG` to 4/3
-
-> **This task uses the `companion-buttons` skill** (see CLAUDE.md: it authors the button JSON, exports, imports into a running Companion via Playwright with "Import Preserving Unselected", and click-tests — keeping a minimal 1-space-indent diff). Invoke that skill to perform the import/validation; the exact JSON below is the button to author. The file is 1-space indented — preserve that.
-
-**Files:**
-- Modify: `src/companion/racecast-buttons.companionconfig` (PAGE 1 `controls`: move `"0"/"7"` → `"4"/"3"`; add new `"0"/"7"`)
-- Test: `tests/test_trailer.py` (already written in Task 5 — `t_companion_has_trailer_button`, `t_companion_red_flag_still_present`)
-
-**Interfaces:**
-- Consumes: the native OBS-WebSocket Companion connection (`connectionId: "dv_e1zuVb_6XgPv0eRibl"`, `definitionId: "set_scene"` / `set_source_mute` / `sceneProgram`) used by INTRO/OUTRO.
-- Produces: a PAGE 1 button at `0/7` labelled `TRAILER` that switches to scene `Trailer` and mutes Discord/Feed A/Feed B (mirror of INTRO); `RED FLAG` relocated to `4/3`, unchanged otherwise.
+Expected: FAIL — `t_companion_has_trailer_button` (no such button yet).
 
 - [ ] **Step 1: Move the existing `RED FLAG` button** — in `src/companion/racecast-buttons.companionconfig`, PAGE 1 `controls`: take the whole button object currently at `controls["0"]["7"]` (the `RED\nFLAG` button) and move it to `controls["4"]["3"]` (an empty slot). Do not change its internals — only its grid position (the dictionary key).
 
