@@ -530,6 +530,17 @@ _ROUTED_FNS = _SHOT_FNS | frozenset({
 })
 
 
+def route_kind(name):
+    """Which persistent connection carries the obs_ws call `name` (#537):
+    'shot' (dedicated screenshot connection), 'ctrl' (shared control connection),
+    or None (not routed — a constant or pure helper, called directly). The relay's
+    _RelayObsFacade consults this (on the real module) to place each call; keeping
+    the policy here co-locates it with the _SHOT_FNS/_ROUTED_FNS registries."""
+    if name not in _ROUTED_FNS:
+        return None
+    return "shot" if name in _SHOT_FNS else "ctrl"
+
+
 def _pct(part, total):
     """skipped/total as a rounded percentage, or None when either is missing or
     total is zero (avoid a div-by-zero and a meaningless 0/0)."""
@@ -618,6 +629,7 @@ def get_health_stats(host="127.0.0.1", port=None, password=None, timeout=2.0, se
     """One obs-websocket session -> (reachable, stats, note). `stats` is the merged
     parse_obs_stats + parse_stream_status dict (empty {} when the requests fail but
     the session opened). Best-effort: never raises (same contract as probe())."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -657,6 +669,7 @@ def release_feed_inputs(ports=RELAY_PORTS, host="127.0.0.1", port=None,
     OBS not running, wrong password, protocol surprise — yields ([], reason)
     and NEVER an exception; stopping the relay must always go through.
     """
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -691,6 +704,7 @@ def feed_media_cursors(ports=RELAY_PORTS, host="127.0.0.1", port=None,
     The #488 freeze detector uses whether the on-air feed's cursor ADVANCES to tell a live
     demuxer from a stale/frozen one — a signal renderSkippedFrames is blind to. Best-effort:
     OBS unreachable / protocol surprise -> ({}, reason), never an exception."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -744,6 +758,7 @@ def refresh_browser_inputs(needle="127.0.0.1:8088", host="127.0.0.1", port=None,
     Returns (refreshed_input_names, note). Best effort like
     release_feed_inputs(): any failure yields ([], reason), never an exception.
     """
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -775,6 +790,7 @@ def get_source_screenshot(source_name, width=640, fmt="jpg", quality=60,
     """A scaled screenshot of an OBS source/scene as raw JPEG bytes.
     Returns (bytes, "") or (None, note). Best effort — never raises (same
     contract as release_feed_inputs/get_scene_collection)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -801,6 +817,7 @@ def get_program_screenshot(width=640, fmt="jpg", quality=60,
     """Screenshot the current OBS program scene (what viewers see) as raw JPEG
     bytes. Resolves the active scene name, then screenshots it on the same
     session. Returns (bytes, "") or (None, note). Best effort — never raises."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -831,6 +848,7 @@ def get_current_program_scene(host="127.0.0.1", port=None,
     Returns (scene_name, "") or (None, note). Best effort — never raises (same
     contract as get_program_screenshot). Used by the auto-failover guard (#378)
     to fire ONLY while OBS is still on the on-air feed scene."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -882,6 +900,7 @@ def set_current_program_scene(scene, host="127.0.0.1", port=None,
     GetSceneTransitionList) + duration first, then switch — so a director take
     uses the chosen transition. Stinger with none configured degrades to Cut and
     returns a note. (ok, note); never raises."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -918,6 +937,7 @@ def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
       "switched" — OBS was idle; SetCurrentProgramScene sent
       "live"     — OBS is streaming; NO switch sent (note explains)
       "error"    — could not reach OBS / a request failed (note has the reason)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -939,6 +959,7 @@ def switch_to_scene_if_idle(scene, host="127.0.0.1", port=None,
 def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
                      password=None, timeout=2.0, session=None):
     """Set an OBS audio input volume in dB (best effort). (ok, note)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -958,6 +979,7 @@ def set_input_volume(input_name, volume_db, host="127.0.0.1", port=None,
 def set_input_mute(input_name, muted, host="127.0.0.1", port=None,
                    password=None, timeout=2.0, session=None):
     """Set an OBS audio input mute state (best effort). (ok, note)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -981,6 +1003,7 @@ def set_stream(active, host="127.0.0.1", port=None,
     requested state, returns (True, "") without sending a start/stop, so a
     double-click or retry never surfaces OBS's "output already active" error.
     (ok, note); never raises."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1010,6 +1033,7 @@ def set_stream_service(platform, key, host="127.0.0.1", port=None,
         data = stream_service_payload(platform, key)
     except ValueError as exc:
         return False, str(exc)
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1036,6 +1060,7 @@ def read_obs_state(sources, inputs, host="127.0.0.1", port=None,
     [(scene, source), …]; `inputs` = [name, …]. Returns (state, "") or (None, note);
     a per-item OBS error leaves that item's fields None rather than failing the whole
     read. Best effort — never raises."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1091,6 +1116,7 @@ def reflect_feed_state(live, do_cut, scene=STINT_SCENE, sources=None,
     raises — a handover must go through even if OBS is closed/locked. On any
     failure the relay falls back to the manual panel/Companion controls."""
     intents = feed_state_intents(live, do_cut, scene=scene, sources=sources)
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1150,6 +1176,7 @@ def set_scene_item_enabled(scene, source, enabled, host="127.0.0.1", port=None,
     """Enable/disable a scene item (best effort). Returns (ok, note); (False,
     reason) on any failure — OBS closed, wrong password, item missing — NEVER an
     exception (same contract as release_feed_inputs/get_scene_collection)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1178,6 +1205,7 @@ def set_scene_item_transform(scene, source, transform, host="127.0.0.1", port=No
     Mirrors set_scene_item_enabled: GetSceneItemId -> SetSceneItemTransform.
     Returns (ok, note); (False, reason) on any failure — OBS closed, wrong
     password, item missing — NEVER an exception."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1206,6 +1234,7 @@ def get_scene_collection(host="127.0.0.1", port=None, password=None, timeout=2.0
     (None, reason) on any failure — OBS closed, wrong password, protocol
     surprise — NEVER an exception (same best-effort contract as
     release_feed_inputs/refresh_browser_inputs)."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)
@@ -1236,6 +1265,7 @@ def set_scene_collection(name=EXPECTED_SCENE_COLLECTION, host="127.0.0.1",
     relay feeds). `racecast event start` calls this automatically to align OBS
     with the active profile (best-effort, gated by RACECAST_OBS_COLLECTION_SWITCH);
     `racecast obs collection set` is the manual path."""
+    note = ""
     own = session is None
     if own:
         session, note = _connect(host, port, password, timeout)

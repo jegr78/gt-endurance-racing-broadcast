@@ -1728,6 +1728,15 @@ class _RecordConn:
 _RMOD = irofeeds._obs_ws
 
 
+def t_route_kind_classifies_calls():
+    assert m.route_kind("get_program_screenshot") == "shot"
+    assert m.route_kind("get_source_screenshot") == "shot"
+    assert m.route_kind("set_input_mute") == "ctrl"
+    assert m.route_kind("feed_media_cursors") == "ctrl"
+    assert m.route_kind("stream_kbps") is None          # pure helper — not routed
+    assert m.route_kind("STINT_SCENE") is None          # constant — not routed
+
+
 def t_relay_facade_routes_screenshot_vs_control():
     shot, ctrl = _RecordConn("shot"), _RecordConn("ctrl")
     fac = irofeeds._RelayObsFacade(shot, ctrl)
