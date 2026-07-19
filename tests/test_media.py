@@ -342,6 +342,33 @@ def t_drive_confirm_url_input_attr_order_independent():
     assert q["id"] == ["ID9"] and q["confirm"] == ["t"]
 
 
+def t_urls_trailer_label():
+    rows = [["Trailer Video", "https://youtu.be/TTT"]]
+    assert m.media_urls_from_csv(rows) == {"trailer": "https://youtu.be/TTT"}, \
+        m.media_urls_from_csv(rows)
+
+
+def t_urls_all_three_media_labels():
+    rows = [["Intro Video", "https://youtu.be/AAA"],
+            ["Outro Video", "https://youtu.be/BBB"],
+            ["Trailer Video", "https://youtu.be/TTT"]]
+    assert m.media_urls_from_csv(rows) == {
+        "intro": "https://youtu.be/AAA", "outro": "https://youtu.be/BBB",
+        "trailer": "https://youtu.be/TTT"}
+
+
+def t_resolve_trailer_priority_cli_then_env():
+    cli = {"trailer": "CLI"}
+    env = {"RACECAST_TRAILER_URL": "ENV"}
+    assert m.resolve_urls({"trailer"}, cli, env, None) == {"trailer": "CLI"}
+    assert m.resolve_urls({"trailer"}, {"trailer": None}, env, None) == {"trailer": "ENV"}
+
+
+def t_graphics_skip_set_includes_trailer():
+    # get-graphics must skip the Trailer row so it is not downloaded as a PNG.
+    assert "trailer video" in graphics.MEDIA_LABELS
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):

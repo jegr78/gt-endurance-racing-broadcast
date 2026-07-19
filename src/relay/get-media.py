@@ -47,7 +47,8 @@ DOWNLOAD_ATTEMPTS = 3                 # total yt-dlp invocations before giving u
 RETRY_BACKOFF_SECONDS = (3, 8)        # sleep before retry 2, retry 3, then last value
 
 # Sheet label cell -> output key.
-MEDIA_LABELS = {"intro video": "intro", "outro video": "outro"}
+MEDIA_LABELS = {"intro video": "intro", "outro video": "outro",
+                "trailer video": "trailer"}
 
 # Music asset constants.
 MUSIC_LABEL = "intermission music"   # Assets-tab label
@@ -352,10 +353,11 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(here)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["intro", "outro", "music", "both", "all"],
+    ap.add_argument("--which",
+                    choices=["intro", "outro", "trailer", "music", "both", "all"],
                     default="all",
-                    help="Which assets to fetch: intro, outro, music, both (=intro+outro), "
-                         "all (=intro+outro+music, default).")
+                    help="Which assets to fetch: intro, outro, trailer, music, "
+                         "both (=intro+outro), all (=intro+outro+trailer+music, default).")
     ap.add_argument("--out", default=media_dir(here),
                     help="Target dir for intro.mp4 / outro.mp4 / intermission.mp3 "
                          "(default: media_dir).")
@@ -364,6 +366,7 @@ def main():
     ap.add_argument("--assets-tab", default="Assets")
     ap.add_argument("--intro-url", default=None)
     ap.add_argument("--outro-url", default=None)
+    ap.add_argument("--trailer-url", default=None)
     ap.add_argument("--music-url", default=None,
                     help="Intermission Music URL (Drive link or yt-dlp-compatible). "
                          "Default: env RACECAST_INTERMISSION_MUSIC_URL or Assets tab.")
@@ -374,7 +377,9 @@ def main():
     a = ap.parse_args()
 
     # Determine video clip set and music flag.
-    if a.which in ("both", "all"):
+    if a.which == "all":
+        which = {"intro", "outro", "trailer"}
+    elif a.which == "both":
         which = {"intro", "outro"}
     elif a.which == "music":
         which = set()
@@ -382,7 +387,7 @@ def main():
         which = {a.which}
     want_music = a.which in ("all", "music")
 
-    cli = {"intro": a.intro_url, "outro": a.outro_url}
+    cli = {"intro": a.intro_url, "outro": a.outro_url, "trailer": a.trailer_url}
 
     # Only hit the sheet if a CLI/env URL is missing for something we need.
     csv_text = None

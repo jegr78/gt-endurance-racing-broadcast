@@ -120,7 +120,7 @@ def safe_filename(label):
 # Intermission Music MP3 would otherwise be downloaded as 'Intermission Music.png'
 # and fail the PNG signature check. Intro/Outro only escape incidentally when
 # YouTube-hosted. KEEP IN SYNC with MEDIA_LABELS + MUSIC_LABEL in get-media.py.
-MEDIA_LABELS = {"intro video", "outro video", "intermission music"}
+MEDIA_LABELS = {"intro video", "outro video", "trailer video", "intermission music"}
 
 # Assets tab "Internal" checkbox (OBS-only assets hidden from the console Graphics
 # browser). Located by header name — mirrors the Crew/Brand header lookup in
