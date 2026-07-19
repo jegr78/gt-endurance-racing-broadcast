@@ -800,7 +800,10 @@ def aggregate_health(facts):
     stream_reconnecting (bool — OBS upstream unstable),
     funnel_down (bool — Funnel was previously seen up but is now down),
     sheet_push_failing (bool — Sheet webhook returning errors),
-    feed_source_states (optional dict mapping feed name to source_state).
+    feed_source_states (optional dict mapping feed name to source_state),
+    feeds_jittery (list of feed names whose last heartbeat interval's max inbound
+        gap exceeded the fan-out reserve — a quiet, display-only yellow (#535);
+        never included in the notify-level facts, so it never pages Discord).
 
     red  = any feed down (a live picture was lost); or obs_reachable truthy and
            stream_active is False AND stream_expected (OBS connected and has
@@ -842,6 +845,8 @@ def aggregate_health(facts):
             yellow.append(f"Feed {name} — commentator source not live yet (connecting)")
         else:
             yellow.append(f"Feed {name} stuck connecting")
+    for name in facts.get("feeds_jittery") or []:
+        yellow.append(f"Feed {name} inbound stall — a gap exceeded the fan-out reserve (stutter risk)")
     reasons.extend(red)
     reasons.extend(yellow)
     level = "red" if red else ("yellow" if yellow else "green")
@@ -6036,6 +6041,10 @@ class Relay:
             self.pov.paused = True
         self.fanout = fanout_enabled(os.environ)
         self.feed_prebuffer_s = feed_prebuffer_s(os.environ)   # #533: OBS/program-audio trailing depth
+        self._stall_signal = feed_stall_signal_enabled(os.environ)   # #535
+        self._stall_floor = feed_stall_floor_s(os.environ)           # #535
+        self._interval_max_gaps = {}      # #535: last heartbeat's per-feed max inbound gap
+        self._jittery_feeds = []          # #535: feeds whose last-interval gap tripped the signal
         self.program_audio = program_audio_enabled(os.environ)
         self._fanout_servers = []
         # Auto-failover to the Intermission scene on confirmed on-air feed loss
@@ -6171,19 +6180,25 @@ class Relay:
                 "stream_reconnecting": st.get("stream_reconnecting"),
                 "funnel_down": funnel_down,
                 "sheet_push_failing": (tpush == "failed"),
-                "feed_source_states": feed_source_states}
+                "feed_source_states": feed_source_states,
+                "feeds_jittery": list(self._jittery_feeds)}
 
     def _refresh_health(self, now):
         """Recompute + store the DISPLAYED health (level/reasons/since). Does NOT
         touch the notification baseline, so /status can refresh it every 2 s
-        without stealing a transition from the heartbeat tick."""
-        h = aggregate_health(self._health_facts(now))
+        without stealing a transition from the heartbeat tick. Also returns a
+        `notify_level` with feeds_jittery excluded (#535: the inbound-stall signal
+        is a quiet, display-only yellow that must never page Discord)."""
+        facts = self._health_facts(now)
+        h = aggregate_health(facts)
+        notify_level = aggregate_health({**facts, "feeds_jittery": []})["level"]  # #535: jitter never pages
         with self._health_lock:
             if h["level"] != self.health_level:
                 self.health_level = h["level"]
                 self.health_since = now
             self.health_reasons = h["reasons"]
         self._compute_desync(now)
+        h["notify_level"] = notify_level
         return h
 
     def _health_snapshot(self, now):
@@ -6301,7 +6316,18 @@ class Relay:
             now = time.time()
             self._maybe_probe_obs(now)
             self._sample_connectivity()
-            level = self._refresh_health(now)["level"]
+            # #535: read+reset each feed's interval max gap ONCE per tick (the
+            # 2 s /status poll must never steal the reset), classify jitter.
+            gaps, jittery = {}, []
+            for _nm, _f in self.feeds.items():
+                g = _f.take_max_inbound_gap()
+                gaps[_nm] = g
+                if (self._stall_signal and not _f.paused and _f.phase == "serving"
+                        and feed_inbound_degraded(g, self.feed_prebuffer_s, self._stall_floor)):
+                    jittery.append(_nm)
+            self._interval_max_gaps = gaps
+            self._jittery_feeds = jittery
+            h = self._refresh_health(now)
             if self.health_store is not None:
                 try:
                     self.health_store.record_tick(self._health_snapshot(now), now)
@@ -6312,9 +6338,9 @@ class Relay:
                     self.health_store.prune(); self._last_prune = now
                 except Exception:  # noqa: BLE001 — best-effort
                     pass
-            if health_should_notify(self._notified_level, level):
-                self._send_health_webhook(level, self.health_reasons, self._notified_level)
-                self._notified_level = level
+            if health_should_notify(self._notified_level, h["notify_level"]):
+                self._send_health_webhook(h["notify_level"], self.health_reasons, self._notified_level)
+                self._notified_level = h["notify_level"]
             self._maybe_auto_failover(now)
             self._check_render_drift(now)
             self._hb_stop.wait(HEARTBEAT_INTERVAL_S)

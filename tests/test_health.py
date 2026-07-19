@@ -1010,6 +1010,29 @@ def t_churn_at_here_suppressed_for_not_live_source():
             r.health_store.close()
 
 
+def t_aggregate_health_jitter_is_yellow_reason():
+    facts = {"feeds_jittery": ["A"]}
+    h = m.aggregate_health(facts)
+    assert h["level"] == "yellow", h
+    assert any("inbound stall" in r.lower() for r in h["reasons"]), h
+
+
+def t_aggregate_health_no_jitter_is_green():
+    assert m.aggregate_health({"feeds_jittery": []})["level"] == "green"
+
+
+def t_jitter_yellow_does_not_page_but_real_yellow_does():
+    # display includes jitter (yellow); notify excludes it (green) -> no page
+    facts = {"feeds_jittery": ["A"]}
+    display = m.aggregate_health(facts)["level"]
+    notify = m.aggregate_health({**facts, "feeds_jittery": []})["level"]
+    assert display == "yellow" and notify == "green"
+    assert m.health_should_notify(None, notify) is False       # green baseline -> no page
+    # a real yellow (e.g. cookies) still pages even with jitter present
+    real = m.aggregate_health({**facts, "feeds_jittery": [], "cookies_stale": True})["level"]
+    assert real == "yellow" and m.health_should_notify("green", real) is True
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
