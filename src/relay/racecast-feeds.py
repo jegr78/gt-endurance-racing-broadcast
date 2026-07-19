@@ -4015,12 +4015,15 @@ class ProgramAudioService:
         threading.Thread(target=self._pump_stderr, args=(ff.stderr,), daemon=True).start()
         return ff, ff.stdin, ff.stdout
 
+    def _join_offset(self, ring, now):
+        return fanout_join_offset(ring, getattr(self.relay, "feed_prebuffer_s", 0.0), now)
+
     def _feed_stdin(self, stdin, ring, proc):
         """Pump on-air ring bytes into THIS encoder generation's ffmpeg stdin;
-        join at the ring's current live edge (only recent data, no rewind).
+        join feed_prebuffer_s behind the live edge to match the broadcast (#533).
         *proc* is the process this thread owns — checked instead of the shared
         self._proc, which a handover reassigns to the NEXT generation."""
-        cursor = ring.live_offset() if hasattr(ring, "live_offset") else 0
+        cursor = self._join_offset(ring, time.monotonic())   # #533: match OBS's trailing join
         try:
             while not self._stop.is_set() and not getattr(ring, "closed", False):
                 data, cursor = ring.read(cursor, 1.0)

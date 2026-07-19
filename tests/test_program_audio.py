@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stdlib unit checks for the on-air program-audio monitor (relay tap).
 Run: python3 tests/test_program_audio.py"""
-import importlib.util, io, os
+import importlib.util, io, logging, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -289,6 +289,28 @@ def t_program_audio_is_probe_false_otherwise():
     assert m._program_audio_is_probe("/preview/program-audio?ts=123") is False
     assert m._program_audio_is_probe("/preview/program-audio?probe=0") is False
     assert m._program_audio_is_probe("/preview/program-audio?probe=") is False
+
+
+# --- ProgramAudioService._join_offset: joins the trailing offset (#533) --------
+def t_program_audio_join_offset_uses_relay_prebuffer():
+    r = m.FeedRing(1_000_000)
+    for i in range(10):
+        r.write(b"x" * 100, now=float(i))
+
+    class FakeRelay:
+        feed_prebuffer_s = 3.0
+    svc = m.ProgramAudioService(FakeRelay(), logging.getLogger("t533pa"))
+    assert svc._join_offset(r, now=9.0) == 700
+
+
+def t_program_audio_join_offset_defaults_when_relay_lacks_attr():
+    r = m.FeedRing(1_000_000)
+    r.write(b"x" * 500, now=1.0)
+
+    class FakeRelay:
+        pass
+    svc = m.ProgramAudioService(FakeRelay(), logging.getLogger("t533pa"))
+    assert svc._join_offset(r, now=5.0) == 500   # getattr default 0.0 -> live edge
 
 
 if __name__ == "__main__":
