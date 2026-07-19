@@ -107,9 +107,11 @@ absolute offset independent of bitrate:
   to **at most one mark per ~100 ms** to bound the deque. Prune marks whose offset
   `<= self._base` (they have scrolled out of the retained window). `time.monotonic()`
   is used (relay runtime; no wall-clock dependency).
-- `offset_at_age(age_s, now)` → the smallest marked offset whose `ts >= now - age_s`;
-  if no mark is that old (cold/short ring) it clamps to `start_offset()` (serve
-  whatever is retained, the prebuffer fills over the next N seconds). Pure.
+- `offset_at_age(age_s, now)` → the offset that was the live edge ~`age_s` ago, i.e.
+  the newest mark whose `ts <= now - age_s` (rounding toward *more* reserve, never
+  less), clamped to `[start_offset, live_offset]`; if no mark is that old (cold/short
+  ring) it clamps to `start_offset()` (serve whatever is retained, the prebuffer fills
+  over the next N seconds). Pure.
 - `trailing_offset(prebuffer_s, now)` = `offset_at_age(prebuffer_s, now)` clamped to
   `[start_offset, live_offset]`. `prebuffer_s <= 0` → `live_offset()` (today's
   behaviour, the clean revert).
