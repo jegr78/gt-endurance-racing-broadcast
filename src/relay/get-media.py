@@ -360,8 +360,8 @@ def main():
                     help="Which assets to fetch: intro, outro, trailer, music, "
                          "both (=intro+outro), all (=intro+outro+trailer+music, default).")
     ap.add_argument("--out", default=media_dir(here),
-                    help="Target dir for intro.mp4 / outro.mp4 / intermission.mp3 "
-                         "(default: media_dir).")
+                    help="Target dir for intro.mp4 / outro.mp4 / trailer.mp4 / "
+                         "intermission.mp3 (default: media_dir).")
     ap.add_argument("--sheet-id", default=os.environ.get("RACECAST_SHEET_ID"),
                     help="Google Sheet ID holding the Assets tab. Default: env RACECAST_SHEET_ID.")
     ap.add_argument("--assets-tab", default="Assets")
