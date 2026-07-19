@@ -43,13 +43,14 @@ password — nothing to do.)
 
 ## The button board
 
-The board has two pages — **show control** and **audio**. The full layout, what each
+The board has three pages — **show control** (scenes & feeds), **race timer & audio**,
+and **flags & graphics**. The full layout, what each
 button does, and the screenshots live in the [Director guide](Director#the-companion-web-buttons-board) —
 that's the operator's reference for actually using the board.
 
 This page covers only how the board is wired up. The relay buttons (`Feeds Next`,
-`Feeds Reload`, `Feeds Status`, `Feed A Reload`, `Feed B Reload`, `POV Reload`, `POV Stop`,
-`POV Toggle` → `/pov/toggle`)
+`Feeds Reload`, `Feed A Reload`, `Feed B Reload`, `POV Reload`, `POV Stop`,
+`POV Toggle` → `/pov/toggle`, and the `FEED A/B ROBUST/AUTO` quality switches → `/feed/<A|B>/quality/<tier>`)
 use the **Generic HTTP Requests**
 connection — see [Relay Mode §4](Relay-Mode#4-control-it-companion--relay). Everything else
 uses the OBS connection. Four combos sit on both: `RED FLAG` (Standby-Cover visibility

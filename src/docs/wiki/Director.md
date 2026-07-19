@@ -293,28 +293,31 @@ the Configuration tab is unreachable, but free text is always there).
 ## The Companion Web Buttons board
 
 The same show as big buttons: open the Web Buttons page at
-`http://<producer-tailscale-ip>:8000/tablet`. Two pages — **show control**
-and **race timer & audio**. The left column on each page (`UP` / `DOWN`)
-flips between them. Everything below is a single tap.
+`http://<producer-tailscale-ip>:8000/tablet`. **Three pages** — **show control**
+(scenes & feeds), **race timer & audio**, and **flags & graphics**. There is no
+on-screen page switch: open all three together at
+`http://<producer-tailscale-ip>:8000/tablet?pages=1,2,3` and scroll (or swipe on a
+tablet) between them. Everything is a single tap.
 
 ### Page 1 — show control
 
+Scenes, feeds and per-feed quality — the live production controls.
+
 | Row | Buttons |
 |-----|---------|
-| **Combos** | `SPLIT`, `STINT A`, `STINT B`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `TRAILER`, `INTERMISSION` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows — as does the `Feeds Next` handover when it cuts the program back to **Stint**. `INTRO` / `OUTRO` / `TRAILER` cut to the looping intro/outro/trailer clip (with its own audio) and mute the live feeds; they light while on air. `INTERMISSION` cuts to the **Intermission** scene (the full-screen background graphic, looping music track, and read-only broadcast-chat panel) — a pure scene switch that leaves the audio mixer untouched (the feeds aren't in this scene, so their audio stops on its own; nothing to un-mute on the way back); when to use it is up to the team. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
-| **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload`, `Feeds Status` |
+| **Combos** | `STINT A`, `STINT B`, `SPLIT`, `INTERVIEW`, `STANDBY`, `INTRO`, `OUTRO`, `TRAILER`, `INTERMISSION`, `RED FLAG` — one press sets a whole look (the scene **and** the right feeds and audio). `SPLIT` also sets **Race Control → *Driver Swaps***; `STINT A` / `STINT B` **clear Race Control** on the way back — unconditionally, whatever it currently shows — as does the `Feeds Next` handover when it cuts the program back to **Stint**. `INTRO` / `OUTRO` / `TRAILER` cut to the looping intro/outro/trailer clip (with its own audio) and mute the live feeds; they light while on air. `INTERMISSION` cuts to the **Intermission** scene (the full-screen background graphic, looping music track, and read-only broadcast-chat panel) — a pure scene switch that leaves the audio mixer untouched (the feeds aren't in this scene, so their audio stops on its own; nothing to un-mute on the way back); when to use it is up to the team. `RED FLAG` is a toggle: first press shows the Standby Cover in the Stint scene **and** sets Race Control to *Red Flag - Race Suspended*; second press hides the cover and clears Race Control. It lights red while the cover is up |
+| **Scenes + relay** | `Stint Scene`, `Split Scene`, `Interview Scene`, `Standby Scene`, `Feeds Next` (the handover), `Feeds Reload` |
 | **Feeds & reloads** | `Feed A Toggle`, `Feed B Toggle`, `POV Toggle`, `Feed A Reload` (reconnect only Feed A → `/reload/A`), `Feed B Reload` (→ `/reload/B`), `POV Reload`, `POV Stop` |
-| **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--hud-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
-| **Pre-race info** | `Weekend Info`, `Race Info`, `Next Event` — three more full-screen Stint graphics, each an independent toggle like Standings. The **starting-grid** graphics have their own page ([Page 5](#page-5--starting-grid)) |
+| **Feed quality** | `FEED A ROBUST` / `FEED A AUTO`, `FEED B ROBUST` / `FEED B AUTO` — a per-feed **quality profile** for a struggling source: **ROBUST** drops that feed to a sustainable 720p; **AUTO** releases it back to the managed default (full quality, with the relay's automatic step-down re-armed). The sub-720p **Emergency** profile and the per-feed **Preview** stay Director-Panel-only — the deck keeps the two most-used switches. The same control lives on the panel's **Feeds** card |
 
-![Companion page 1 — show control: combos, scene switches, feeds & reloads, graphics, weather, and the pre-race info toggles](images/companion-page1-show-control.png)
+![Companion page 1 — show control: combos, scene switches, feeds & reloads, and the per-feed ROBUST / AUTO quality switches](images/companion-page1-show-control.png)
 
 ### Page 2 — race timer & audio
 
 | Row | Buttons |
 |-----|---------|
 | **Race timer** | `TIMER START` (starts — or resumes a paused timer), `TIMER PAUSE` (freezes the remaining time on screen), `TIMER SHOW` / `TIMER HIDE` (overlay visibility), `TIMER +1 MIN` / `TIMER -1 MIN` (correction: shifts the running countdown, a paused remainder, or — before start — the race duration), `TIMER RESET` (back to the full duration). Stopwatch logic; details in [Race-Timer](Race-Timer) |
-| **Mute** | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` |
+| **Mute** | `MUTE A`, `MUTE B`, `MUTE POV`, `MUTE DISC` — each source's `MUTE` and its three `VOL` keys share a colour (Feed A blue, Feed B green, POV amber, Discord violet); a muted source lights **red** |
 | **Volume A / B** | `VOL A DOWN` / `VOL A UP` / `VOL A RESET`, `VOL B DOWN` / `VOL B UP` / `VOL B RESET` |
 | **Volume POV / Discord** | `VOL POV DOWN` / `VOL POV UP` / `VOL POV RESET`, `VOL DISC DOWN` / `VOL DISC UP` / `VOL DISC RESET` |
 
@@ -328,12 +331,20 @@ flips between them. Everything below is a single tap.
 > Tip: for the everyday moves, use the **combo** buttons on page 1 (`STINT A`,
 > `SPLIT`, `INTERVIEW`, …) — they set the scene and the audio in one tap.
 
-### Page 3 — race-condition flag
+### Page 3 — flags & graphics
+
+Every graphic overlay in one place: the race-condition flags, the flag graphics,
+the pre-race info and starting-grid boards, the standings/results/weather overlays,
+and the per-row grid reveals. The flag rows are colour-coded; the overlay toggles
+stay dark and light up while their graphic is on air.
 
 | Row | Buttons |
 |-----|---------|
 | **Flag** | `FLAG GREEN`, `FLAG YELLOW`, `SAFETY CAR`, `FCY` (Full Course Yellow), `RED FLAG`, `CLEAR FLAG` — each sets (or clears) the colour-coded **race-condition flag** HUD element (`/setup/set/flag/<state>`, `CLEAR FLAG` → `/setup/clear/flag`). The flag's vocabulary comes from the sheet's Configuration **Flag** column; these buttons cover the canonical states |
 | **Flag Gfx** | `GFX GREEN`, `GFX YELLOW`, `GFX SC`, `GFX VSC`, `GFX RED`, `GFX CLEAR` — toggles a full-screen flag-status **graphic overlay** in the Stint and Splitscreen scenes (`/obs/flag/set/<key>`, `GFX CLEAR` → `/obs/flag/clear`). Exactly one is active at a time; pressing a new one hides the previous. These are the *graphic* alternative to the Flag row above — the two controls are independent |
+| **Info + grid** | `Weekend Info`, `Race Info`, `Next Event` — pre-race full-screen Stint graphics, each an independent toggle like Standings — plus `Starting Grid`, the full starting-grid board |
+| **Graphics & weather** | `Standings`, `Schedule`, `Race Results`, `Quali Results`, `Standby Toggle` (incident cover — see [The race](#through-the-broadcast-scene--hud-cues)), `Weather Race (1) Toggle`, `Weather Race (2) Toggle`, `Weather Quali Toggle` — the three weather buttons are full-screen Stint overlays, each an independent toggle like Standings/Results |
+| **Grid rows** | `Grid R1`…`Grid R8` — reveal individual starting-grid rows over the `Starting Grid` board, each an independent toggle. Each row's PNG paints only its own line, so they layer cleanly in any order |
 
 > The **Flag** row (text chip) is a **separate** element from the page-1 `RED FLAG` combo (which drives the
 > Race Control banner + the Standby cover). The race-condition flag text chip is shown
@@ -345,24 +356,7 @@ flips between them. Everything below is a single tap.
 > (see [Sheet template](Sheet-Template#assets-tab)). A missing PNG is non-fatal — OBS
 > shows nothing for that state. The panel's **Flag Gfx** row is the equivalent control.
 
-![Companion page 3 — race-condition flag: text row (Green / Yellow / Safety Car / FCY / Red / Clear) and graphic row (GFX Green / Yellow / SC / VSC / Red / Clear)](images/companion-page3-flags.png)
-
-> **Page 4 — Feed quality.** A per-feed **quality profile** control for a struggling
-> source: **ROBUST** drops the feed to a sustainable 720p; **AUTO** releases it back to
-> the managed default (full quality, with the relay's automatic step-down re-armed).
-> Feed A on the top row, Feed B below. The sub-720p **Emergency** profile and the per-feed
-> **Preview** stay Director-Panel-only — the deck keeps the two most-used switches. The
-> same control lives on the panel's **Feeds** card.
-
-![Companion page 4 — feed quality: per-feed ROBUST / AUTO for Feed A and Feed B](images/companion-page4-feed-quality.png)
-
-### Page 5 — starting grid
-
-| Row | Buttons |
-|-----|---------|
-| **Grid** | `Starting Grid`, `Grid R1`…`Grid R8` — the starting-grid graphics for the Stint scene, each an independent toggle like Standings. Show `Starting Grid` for the full board, then reveal `Grid R1`…`Grid R8` as needed (each row's PNG paints only its own line, so they layer cleanly in any order) |
-
-![Companion page 5 — starting grid: Starting Grid plus Grid R1 through R8, independent Stint-graphic toggles](images/companion-page5-grid.png)
+![Companion page 3 — flags & graphics: the race-condition flag and flag-graphic rows, the pre-race info and starting-grid toggles, the standings/results/weather overlays, and the per-row grid reveals](images/companion-page3-flags-graphics.png)
 
 How the board is imported and built: [Companion](Companion).
 
