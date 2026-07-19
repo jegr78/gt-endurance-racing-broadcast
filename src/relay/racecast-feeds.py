@@ -3321,6 +3321,43 @@ def _program_audio_stream_ring(handler, ring, content_type, service):
     return None
 
 
+# --- On-air-aware SPLIT audio (#534) ----------------------------------------
+SPLIT_DISCORD_INPUT = "Discord Audio Capture"   # #534: interview/Discord bus muted during a SPLIT
+
+
+def split_audio_targets(live_feed):
+    """(unmute, mute) OBS inputs for a SPLIT given the on-air feed (#534): unmute the
+    on-air feed, mute the off-air feed + the Discord/interview bus. Pure — the fix for
+    the hardcoded 'unmute A / mute B' that muted the live commentator on B-on-air handovers."""
+    on = "Feed A" if live_feed == "A" else "Feed B"
+    off = "Feed B" if live_feed == "A" else "Feed A"
+    return on, [off, SPLIT_DISCORD_INPUT]
+
+
+def apply_split_audio(relay, obs_ws):
+    """Resolve the on-air feed and apply the SPLIT audio via obs-websocket (#534).
+    Best-effort, mirrors /obs/audio: obs unreachable -> ({"error":...}, 503); never raises."""
+    if obs_ws is None:
+        return {"error": "obs unavailable"}, 503
+    live = relay.live_feed()
+    unmute, mute = split_audio_targets(live)
+    ok_all = True
+    notes = []
+    ok, note = obs_ws.set_input_mute(unmute, False)
+    ok_all = ok_all and ok
+    if note:
+        notes.append(note)
+    for name in mute:
+        ok, note = obs_ws.set_input_mute(name, True)
+        ok_all = ok_all and ok
+        if note:
+            notes.append(note)
+    payload = {"ok": bool(ok_all), "live": live, "unmute": unmute, "mute": mute}
+    if notes:
+        payload["note"] = "; ".join(str(n) for n in notes)
+    return payload, (200 if ok_all else 503)
+
+
 def split_mjpeg_frames(buf):
     """Pure: pull every COMPLETE JPEG (SOI..EOI) out of an MJPEG byte buffer.
     Returns (frames, remainder); remainder is the trailing incomplete bytes to
@@ -8282,6 +8319,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                     if p == ["obs", "flag", "clear"]:
                         return self._send(flag_graphic_store.clear())
                     return self._send({"error": "unknown", "path": self.path}, 404)
+                if p == ["obs", "split-audio"]:
+                    payload, status = apply_split_audio(relay, _obs_ws)
+                    return self._send(payload, status)
                 if p[:1] == ["chat"]:
                     if not chat_store:
                         return self._send({"error": "chat disabled"}, 404)
@@ -8844,6 +8884,9 @@ def make_handler(relay, panel_path=None, hud_source=None, hud_path=None, assets_
                         return self._send({"ok": False, "error": "audio needs db or mute"}, 400)
                     return self._send({"ok": True} if ok
                                       else {"ok": False, "error": note}, 200 if ok else 503)
+                if p == ["obs", "split-audio"]:
+                    payload, status = apply_split_audio(relay, _obs_ws)
+                    return self._send(payload, status)
                 if p == ["obs", "stream"]:
                     if _obs_ws is None:
                         return self._send({"error": "obs unavailable"}, 503)

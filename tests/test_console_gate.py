@@ -1054,6 +1054,63 @@ def t_health_monitor_assets_served():
         srv.shutdown()
 
 
+def t_console_obs_split_audio_resolves_on_air_feed():
+    # #534: SPLIT audio must resolve the ACTUAL on-air feed server-side — the
+    # Suzuka bug hardcoded "unmute A / mute B", muting the live commentator
+    # whenever B was on air. Force live_feed() -> "B" and assert B gets
+    # unmuted while A + the Discord bus get muted.
+    srv = _serve(); port = srv.server_address[1]
+    calls = []
+
+    class _FakeObs:
+        def set_input_mute(self, name, muted):
+            calls.append((name, muted)); return True, ""
+
+    orig_obs, m._obs_ws = m._obs_ws, _FakeObs()
+    orig_live_feed = m.Relay.live_feed
+    m.Relay.live_feed = lambda self: "B"
+    try:
+        code, body = _post(port, "/console/obs/split-audio", _tok("bob"))
+        assert code == 200, (code, body)
+        data = json.loads(body)
+        assert data["live"] == "B", data
+        assert ("Feed B", False) in calls, calls          # on-air unmuted
+        assert ("Feed A", True) in calls, calls           # off-air muted
+        assert ("Discord Audio Capture", True) in calls, calls
+    finally:
+        m._obs_ws = orig_obs
+        m.Relay.live_feed = orig_live_feed
+        srv.shutdown()
+
+
+def t_obs_split_audio_get_route_for_companion():
+    # #534: the Companion "Split Scene" button hits the tailnet-root GET route
+    # (ungated, no token — like /obs/flag). Same handler, so B on air -> B
+    # unmuted, A + Discord muted.
+    srv = _serve(); port = srv.server_address[1]
+    calls = []
+
+    class _FakeObs:
+        def set_input_mute(self, name, muted):
+            calls.append((name, muted)); return True, ""
+
+    orig_obs, m._obs_ws = m._obs_ws, _FakeObs()
+    orig_live_feed = m.Relay.live_feed
+    m.Relay.live_feed = lambda self: "B"
+    try:
+        code, body = _get(port, "/obs/split-audio")       # root path, no token
+        assert code == 200, (code, body)
+        data = json.loads(body)
+        assert data["live"] == "B", data
+        assert ("Feed B", False) in calls, calls
+        assert ("Feed A", True) in calls, calls
+        assert ("Discord Audio Capture", True) in calls, calls
+    finally:
+        m._obs_ws = orig_obs
+        m.Relay.live_feed = orig_live_feed
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("t_") and callable(fn):
