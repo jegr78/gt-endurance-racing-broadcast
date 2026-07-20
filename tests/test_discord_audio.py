@@ -303,7 +303,6 @@ def t_apply_box_transform_pov_still_works_via_generic():
 
 
 def t_commentary_has_tyres_capture_structure():
-    import json, os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     with open(os.path.join(root, "src/obs/GT_Racing_Solo_Commentary.json"), encoding="utf-8") as fh:
         d = json.load(fh)
