@@ -49,6 +49,7 @@ def main():
     seen = 0
     print(f"listening on 33740 ({dest or 'auto-discovery'}); Ctrl-C to stop")
     with contextlib.ExitStack() as stack:
+        stack.enter_context(sock)   # close the socket on exit (Ctrl-C / error)
         cap = (stack.enter_context(open(args.capture, "a", encoding="utf-8"))
                if args.capture else None)
         while True:
