@@ -274,8 +274,14 @@ def build_download_cmd(url, out_path, cookies=None):
     beginning with '-' cannot be parsed as a yt-dlp flag (e.g. --exec, which
     would be arbitrary command execution). Cookies are inserted before the
     separator so they stay an option."""
+    # --force-overwrites + --no-continue: always re-fetch to match the currently
+    # resolved URL. yt-dlp's default skips an existing output file ("has already
+    # been downloaded", exit 0), which silently froze a clip whenever one already
+    # existed — a placeholder written before the URL was set, or a changed URL —
+    # and made get-media print a misleading "OK". (music uses an atomic os.replace,
+    # so it was always fresh; this brings the yt-dlp path to parity.)
     cmd = ["yt-dlp", "-f", YTDLP_FORMAT, "--merge-output-format", "mp4",
-           "--no-warnings", "-o", out_path]
+           "--no-warnings", "--force-overwrites", "--no-continue", "-o", out_path]
     if cookies and os.path.exists(cookies):
         cmd += ["--cookies", cookies]
     cmd += ["--", url]
