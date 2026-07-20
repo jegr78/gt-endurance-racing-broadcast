@@ -137,6 +137,18 @@ def t_download_cmd_separates_url():
     assert "--cookies" not in cmd
 
 
+def t_download_cmd_forces_overwrite():
+    # A clip must always be re-fetched to match the currently-resolved URL: yt-dlp's
+    # default skips an existing output file ("has already been downloaded"), which
+    # left a placeholder/stale trailer.mp4 (or a changed URL) frozen. --force-overwrites
+    # (and no partial-resume) makes the on-disk file always match the resolved URL.
+    cmd = m.build_download_cmd("https://youtu.be/AAA", "/tmp/trailer.mp4")
+    assert "--force-overwrites" in cmd, cmd
+    assert "--no-continue" in cmd, cmd
+    # the overwrite flags stay options, before the `--` URL separator
+    assert cmd.index("--force-overwrites") < cmd.index("--"), cmd
+
+
 def t_download_cmd_cookies_before_separator():
     import tempfile, os as _os
     fd, ck = tempfile.mkstemp(); _os.close(fd)
