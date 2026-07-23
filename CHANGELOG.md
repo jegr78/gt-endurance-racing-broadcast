@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.8.0...v1.9.0) (2026-07-23)
+
+
+### Features
+
+* solo mode, GT7 telemetry + GT Racing rebrand (merge epic [#300](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/300)) ([d0c8713](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/d0c8713f28ea45512102d1621e6334d5e305cff5))
+
+
+### Bug Fixes
+
+* **codeql:** close probe socket + drop redundant test import ([#552](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/552)) ([e098b52](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/e098b5203324e9ce464ae9d76a7b85910c4a993f))
+* **media:** force-overwrite clip downloads so a stale/placeholder file refreshes ([#553](https://github.com/jegr78/gt-endurance-racing-broadcast/issues/553)) ([ad243df](https://github.com/jegr78/gt-endurance-racing-broadcast/commit/ad243df4f0a0306a7ea53fb04e23d7ed67495e72))
+
 ## [1.8.0](https://github.com/jegr78/gt-endurance-racing-broadcast/compare/v1.7.1...v1.8.0) (2026-07-19)
 
 
